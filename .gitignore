@@ -60,3 +60,5 @@ backend/openapi
 .venv
 
 mcp
+.agents/
+.github/skills/

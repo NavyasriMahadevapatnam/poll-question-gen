@@ -55,6 +55,10 @@ export interface StudentData {
   }[];
 }
 
+// Cache for localStorage reads to avoid repeated DOM access  
+let cachedActiveRoomCode: string | null | undefined;
+let cachedJoinedRoom: string | null | undefined;
+
 export default function StudentDashboard() {
   const { user } = useAuthStore();
   const [isDark] = useState(false);
@@ -65,10 +69,16 @@ export default function StudentDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const activeRoomCode = localStorage.getItem("activeRoomCode");
-    const joinedRoom = localStorage.getItem("joinedRoom");
-    if (activeRoomCode && joinedRoom === "true") {
-      setLocalActiveRoom(activeRoomCode);
+    // Use cached values to avoid multiple localStorage reads
+    if (cachedActiveRoomCode === undefined) {
+      cachedActiveRoomCode = localStorage.getItem("activeRoomCode");
+    }
+    if (cachedJoinedRoom === undefined) {
+      cachedJoinedRoom = localStorage.getItem("joinedRoom");
+    }
+    
+    if (cachedActiveRoomCode && cachedJoinedRoom === "true") {
+      setLocalActiveRoom(cachedActiveRoomCode);
     }
   }, []);
 
@@ -101,8 +111,12 @@ export default function StudentDashboard() {
   useEffect(() => {
     const handleWindowFocus = () => {
       if (user?.uid) {
+        // Update cache on window focus
         const activeRoomCode = localStorage.getItem("activeRoomCode");
         const joinedRoom = localStorage.getItem("joinedRoom");
+        cachedActiveRoomCode = activeRoomCode;
+        cachedJoinedRoom = joinedRoom;
+        
         if (activeRoomCode && joinedRoom === "true") {
           api.get(`/livequizzes/rooms/${activeRoomCode}`)
             .then((res) => {
@@ -111,12 +125,16 @@ export default function StudentDashboard() {
               } else {
                 localStorage.removeItem("activeRoomCode");
                 localStorage.removeItem("joinedRoom");
+                cachedActiveRoomCode = null;
+                cachedJoinedRoom = null;
                 setLocalActiveRoom(null);
               }
             })
             .catch(() => {
               localStorage.removeItem("activeRoomCode");
               localStorage.removeItem("joinedRoom");
+              cachedActiveRoomCode = null;
+              cachedJoinedRoom = null;
               setLocalActiveRoom(null);
             });
         } else {
