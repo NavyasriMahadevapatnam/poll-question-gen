@@ -3,267 +3,100 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Zap, Users, Info, History, LogOut, Clock, CheckCircle, Circle, Trophy, X, AlertCircle, BookOpen, ChevronDown, ChevronUp, ArrowLeft } from "lucide-react";
+import { Zap, Users, Info, History, LogOut, BookOpen, ArrowLeft, Clock, CheckCircle, Circle, Trophy, ChevronUp, ChevronDown, X } from "lucide-react";
 import { useAuth } from "@/lib/hooks/use-auth";
 import api from "@/lib/api/api";
-import socket from "@/lib/api/socket";
 import { useAuthStore } from "@/lib/store/auth-store";
 
-//const Socket_URL = import.meta.env.VITE_SOCKET_URL;
-//const socket = io(Socket_URL);
-type PollAnswer = {
-  userId: string;
-  answerIndex: number;
-  answeredAt: string;
-};
+// Extracted hooks
+import { useStudentPoll } from "./hooks/useStudentPoll";
+import { usePollHelpers } from "./hooks/usePollHelpers";
 
-type Poll = {
-  _id: string;
-  question: string;
-  options: string[];
-  roomCode: string;
-  creatorId: string;
-  createdAt: string;
-  timer: number;
-  correctOptionIndex?: number;
-  answers?: PollAnswer[];
-};
-
-type Room = {
-  roomCode: string;
-  name: string;
-  teacherId: string;
-  teacherName: string;
-  createdAt: string;
-  status: 'active' | 'ended';
-  polls: Poll[];
-};
-
-type RoomDetails = {
-  roomCode: string;
-  creatorId: string;
-  teacherName?: string;
-  createdAt: string;
-  room?: Room;
-};
+// Extracted components
+import { StatusBadge } from "./components/StatusBadge";
 
 export default function StudentPollRoom() {
   const params = useParams({ from: '/student/pollroom/$code' });
   const roomCode = params.code;
   const navigate = useNavigate();
   const { user } = useAuth();
+  const email = useAuthStore((state) => state.user?.email);
 
-  const [joinedRoom, setJoinedRoom] = useState(false);
-  const [livePolls, setLivePolls] = useState<Poll[]>([]);
-  const [roomDetails, setRoomDetails] = useState<RoomDetails | null>(null);
-  const [allRoomPolls, setAllRoomPolls] = useState<Poll[]>([]);
-  const [answeredPolls, setAnsweredPolls] = useState<Record<string, number>>({});
+  // UI state
   const [activeMenu, setActiveMenu] = useState<"room" | "history" | null>(null);
-  const [pollTimers, setPollTimers] = useState<Record<string, number>>({});
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, number | null>>({});
-  const [isAnimating, setIsAnimating] = useState(false);
   const [showAllPolls, setShowAllPolls] = useState(false);
   const [showRoomDetails, setShowRoomDetails] = useState(false);
-  const email = useAuthStore((state) => state.user?.email)
-  useEffect(() => {
-  socket.on("room-data", (room) => {
-    setRoomDetails(room);
-  });
+  const [isAnimating, setIsAnimating] = useState(false);
 
-  socket.on("room-updated", (room) => {
-    setRoomDetails(room); // update students list in real-time
-  });
+  // Use extracted hooks
+  const {
+    joinedRoom,
+    livePolls,
+    roomDetails,
+    allRoomPolls,
+    answeredPolls,
+    pollTimers,
+    selectedOptions,
+    setSelectedOptions,
+    setAllRoomPolls,
+    joinRoom,
+    leaveRoom,
+    submitAnswer,
+  } = useStudentPoll({ roomCode, userId: user?.uid, email });
 
-  return () => {
-    socket.off("room-data");
-    socket.off("room-updated");
-  };
-}, []);
+  const {
+    getTimerColor,
+    getTimerBg,
+    getPollAnswerStatus,
+  } = usePollHelpers();
+
+  // Load room details on mount
   useEffect(() => {
-    if (!roomCode) return;
-    const joinRoom = () => {
-      socket.emit('join-room', roomCode, email);
-      setJoinedRoom(true);
-      toast.success("Joined room!");
+    const loadRoomDetails = async () => {
+      try {
+        const res = await api.get(`/livequizzes/rooms/${roomCode}`);
+        if (res.data?.room) {
+          setAllRoomPolls(res.data.room.polls || []);
+        }
+      } catch (e) {
+        console.error("Failed to load room details:", e);
+      }
     };
 
-    const setupEventListeners = () => {
-      socket.off('new-poll');
-      socket.off('room-ended');
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('live-poll-results');  
+    if (roomCode) {
+      loadRoomDetails();
+      localStorage.setItem("activeRoomCode", roomCode);
+      localStorage.setItem("joinedRoom", "true");
+    }
+  }, [roomCode, setAllRoomPolls]);
 
-      socket.on("new-poll", (poll: Poll) => {
-        setLivePolls(prev => [...prev, poll]);
-        toast("New poll received!");
-      });
-
-      socket.on('room-ended', () => {
-        toast.error('Room has ended');
-        navigate({ to: '/student/home' });
-      });
-      socket.on('live-poll-results',()=>{
-        loadRoomDetails(roomCode)   
-      })
-
-      socket.on('connect', () => {
-        console.log('Socket reconnected, rejoining room...');
-        joinRoom();
-      });
-
-      socket.on('disconnect', () => {
-        console.log('Socket disconnected');
-        setJoinedRoom(false);
-      });
-    };
-
-    setupEventListeners();
-
-    if (socket.connected) {
+  // Auto-join room on mount
+  useEffect(() => {
+    if (roomCode && !joinedRoom) {
       joinRoom();
     }
+  }, [roomCode, joinedRoom, joinRoom]);
 
-    loadRoomDetails(roomCode);
-    const savedAnswers = localStorage.getItem(`answeredPolls_${roomCode}`);
-    if (savedAnswers) setAnsweredPolls(JSON.parse(savedAnswers));
-    localStorage.setItem("activeRoomCode", roomCode);
-    localStorage.setItem("joinedRoom", "true");
-
-    return () => {
-      socket.off('new-poll');
-      socket.off('room-ended');
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('live-poll-results');  
-    };
-  }, [roomCode, navigate]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPollTimers(prev => {
-        const updated: Record<string, number> = {};
-        livePolls.forEach(p => {
-          const current = prev[p._id] ?? p.timer;
-          updated[p._id] = current > 0 ? current - 1 : 0;
-        });
-        return updated;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [livePolls]);
-
-  useEffect(() => {
-    Object.entries(pollTimers).forEach(([pollId, time]) => {
-      if (time === 0) {
-        setLivePolls(prev => prev.filter(p => p._id !== pollId));
-      }
-    });
-  }, [pollTimers]);
-
-  useEffect(() => {
-    if (roomCode) {
-      localStorage.setItem(`answeredPolls_${roomCode}`, JSON.stringify(answeredPolls));
-    }
-  }, [answeredPolls, roomCode]);
-
-  const loadRoomDetails = async (code: string) => {
-    try {
-      const res = await api.get(`/livequizzes/rooms/${code}`);
-      if (res.data?.room) {
-        setRoomDetails(res.data);
-        setAllRoomPolls(res.data.room.polls || []);
-      }
-    } catch (e) {
-      console.error("Failed to load room details:", e);
-    }
+  // Handlers
+  const handleSelectOption = (pollId: string, optionIndex: number) => {
+    setSelectedOptions(prev => ({ ...prev, [pollId]: optionIndex }));
   };
 
-  const submitAnswer = async (pollId: string, answerIndex: number) => {
-    setIsAnimating(true);
-    try {
-      await api.post(`/livequizzes/rooms/${roomCode}/polls/answer`, {
-        pollId, userId: user?.uid, answerIndex
-      });
-      setTimeout(() => {
-        setAnsweredPolls(prev => ({ ...prev, [pollId]: answerIndex }));
-        setIsAnimating(false);
-        toast.success("Vote submitted!");
-      }, 300);
-    } catch {
-      setIsAnimating(false);
-      toast.error("Failed to submit vote");
+  const handleSubmitAnswer = async (pollId: string) => {
+    const selected = selectedOptions[pollId];
+    if (selected === null || selected === undefined) {
+      toast.error("Please select an option");
+      return;
     }
+    await submitAnswer(pollId, selected);
   };
 
-  const exitRoom = () => {
-    socket.emit("leave-room", roomCode, email);
-    setJoinedRoom(false);
-    setLivePolls([]);
-    setAnsweredPolls({});
-    setRoomDetails(null);
-    setAllRoomPolls([]);
-    localStorage.removeItem("activeRoomCode");
-    localStorage.removeItem("joinedRoom");
-    setActiveMenu(null);
-    toast.info("Left the room.");
+  const handleExitRoom = () => {
+    leaveRoom();
     navigate({ to: `/student/pollroom` });
   };
 
-  const getTimerColor = (timeLeft: number) => {
-    if (timeLeft > 20) return "text-emerald-500";
-    if (timeLeft > 10) return "text-amber-500";
-    return "text-red-500";
-  };
-
-  const getTimerBg = (timeLeft: number) => {
-    if (timeLeft > 20) return "bg-emerald-500/20";
-    if (timeLeft > 10) return "bg-amber-500/20";
-    return "bg-red-500/20";
-  };
-
-  const getPollAnswerStatus = (poll: Poll) => {
-    if (!user?.uid) return 'unanswered';
-
-    const userAnswer = answeredPolls[poll._id];
-    if (userAnswer === undefined) {
-      // Check if user answered in the room's poll answers
-      const pollAnswer = poll.answers?.find(answer => answer.userId === user.uid);
-      if (pollAnswer) {
-        return pollAnswer.answerIndex === poll.correctOptionIndex ? 'correct' : 'incorrect';
-      }
-      return 'unanswered';
-    }
-
-    return userAnswer === poll.correctOptionIndex ? 'correct' : 'incorrect';
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'correct':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-            <CheckCircle className="w-4 h-4 text-emerald-600" />
-            <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Correct</span>
-          </div>
-        );
-      case 'incorrect':
-        return (
-          <div className="flex items-center gap-2 px-3 py-1 bg-red-100 dark:bg-red-900/30 rounded-full">
-            <X className="w-4 h-4 text-red-600" />
-            <span className="text-sm font-medium text-red-700 dark:text-red-300">Incorrect</span>
-          </div>
-        );
-      default:
-        return (
-          <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full">
-            <AlertCircle className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Not Answered</span>
-          </div>
-        );
-    }
-  };
-
+  // Derived state
   const activeLivePolls = livePolls.filter(p => answeredPolls[p._id] === undefined);
   const answeredLivePolls = livePolls.filter(p => answeredPolls[p._id] !== undefined);
 
@@ -323,7 +156,7 @@ export default function StudentPollRoom() {
 
             {joinedRoom && (
               <Button
-                onClick={exitRoom}
+                onClick={handleExitRoom}
                 variant="outline"
                 size="lg"
                 className="bg-gradient-to-r from-red-500 to-pink-500 text-white border-0 hover:from-red-600 hover:to-pink-600 transition-all duration-300 hover:scale-105"
@@ -489,9 +322,11 @@ export default function StudentPollRoom() {
                               hover:from-emerald-600 hover:to-blue-600 transition-all duration-300 hover:scale-105
                               ${isAnimating ? 'animate-pulse' : ''}
                             `}
-                            onClick={() => {
+                            onClick={async () => {
                               if (selectedOptions[poll._id] !== null && selectedOptions[poll._id] !== undefined) {
-                                submitAnswer(poll._id, selectedOptions[poll._id]!);
+                                setIsAnimating(true);
+                                await submitAnswer(poll._id, selectedOptions[poll._id]!);
+                                setIsAnimating(false);
                               } else {
                                 toast.warning("Please select an option first");
                               }
@@ -630,7 +465,7 @@ export default function StudentPollRoom() {
                   ) : (
                     <div className="space-y-3">
                       {allRoomPolls.map((poll) => {
-                        const status = getPollAnswerStatus(poll);
+                        const status = getPollAnswerStatus(poll, user?.uid, answeredPolls);
                         const userAnswerIndex = answeredPolls[poll._id] ??
                           poll.answers?.find(answer => answer.userId === user?.uid)?.answerIndex;
 
@@ -643,7 +478,7 @@ export default function StudentPollRoom() {
                               <h4 className="font-medium text-gray-800 dark:text-gray-200 text-sm leading-5 pr-2">
                                 {poll.question}
                               </h4>
-                              {getStatusBadge(status)}
+                              <StatusBadge status={status} />
                             </div>
 
                             <div className="space-y-2">
