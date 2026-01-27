@@ -45,7 +45,7 @@ export default function TeacherSettings() {
   const [hasChanges, setHasChanges] = useState(false);
 
   // Profile settings
-  const [profileData, setProfileData] = useState({
+  const [profileData, setProfileData] = useState(() => ({
     name: user?.name || "",
     email: user?.email || "",
     phone: "",
@@ -56,10 +56,10 @@ export default function TeacherSettings() {
     specialization: "",
     experience: "5+ years",
     avatar: user?.avatar || "",
-  });
+  }));
 
   // Notification settings
-  const [notificationSettings, setNotificationSettings] = useState({
+  const [notificationSettings, setNotificationSettings] = useState(() => ({
     classNotifications: true,
     studentSubmissions: true,
     emailDigest: true,
@@ -69,10 +69,10 @@ export default function TeacherSettings() {
     weeklyReport: true,
     gradeReminders: true,
     courseUpdates: true,
-  });
+  }));
 
   // Privacy settings
-  const [privacySettings, setPrivacySettings] = useState({
+  const [privacySettings, setPrivacySettings] = useState(() => ({
     profileVisibility: "department",
     showEmail: true,
     showPhone: false,
@@ -81,10 +81,10 @@ export default function TeacherSettings() {
     dataCollection: true,
     analyticsTracking: true,
     researchParticipation: false,
-  });
+  }));
 
   // Audio/Video settings
-  const [avSettings, setAvSettings] = useState({
+  const [avSettings, setAvSettings] = useState(() => ({
     cameraEnabled: true,
     micEnabled: true,
     speakerVolume: [75],
@@ -94,10 +94,10 @@ export default function TeacherSettings() {
     noiseReduction: true,
     echoCancellation: true,
     screenShareQuality: "high",
-  });
+  }));
 
   // Appearance settings
-  const [appearanceSettings, setAppearanceSettings] = useState({
+  const [appearanceSettings, setAppearanceSettings] = useState(() => ({
     theme: theme || "light",
     language: "en",
     fontSize: "medium",
@@ -109,20 +109,20 @@ export default function TeacherSettings() {
       reducedMotion: false,
       screenReader: false,
     },
-  });
+  }));
 
   // Performance settings
-  const [performanceSettings, setPerformanceSettings] = useState({
+  const [performanceSettings, setPerformanceSettings] = useState(() => ({
     autoSave: true,
     syncFrequency: "real-time",
     cacheSize: "large",
     offlineMode: true,
     dataUsage: "unlimited",
     backgroundSync: true,
-  });
+  }));
 
   // Teaching preferences
-  const [teachingSettings, setTeachingSettings] = useState({
+  const [teachingSettings, setTeachingSettings] = useState(() => ({
     designation: "",
     classReminders: true,
     reminderTimes: ["08:00", "14:00", "18:00"],
@@ -131,7 +131,7 @@ export default function TeacherSettings() {
     defaultSessionLength: "90",
     attendanceReminders: true,
     officeHours: "Mon-Fri 2:00-4:00 PM",
-  });
+  }));
 
   const tabs = [
     { id: "profile", label: "Profile", icon: User },

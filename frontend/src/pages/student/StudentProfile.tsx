@@ -71,8 +71,8 @@ export default function StudentProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Form data state
-  const [formData, setFormData] = useState({
+  // Form data state - use lazy initialization
+  const [formData, setFormData] = useState(() => ({
     firstName: "",
     lastName: "",
     phoneNumber: "",
@@ -82,7 +82,7 @@ export default function StudentProfile() {
     institution: "",
     designation: "",
     bio: "",
-  });
+  }));
 
   // Load user profile data
   useEffect(() => {

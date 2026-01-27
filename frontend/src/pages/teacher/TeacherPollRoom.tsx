@@ -107,8 +107,7 @@ export default function TeacherPollRoom() {
       filteredOptions = [...questionData.options, ...Array(4 - questionData.options.length).fill("")];
     } else {
       const incorrectOptions = questionData.options
-        .filter((_, idx) => idx !== questionData.correctOptionIndex)
-        .filter(opt => opt.trim() !== "");
+        .filter((opt, idx) => idx !== questionData.correctOptionIndex && opt.trim() !== "");
 
       const shuffledIncorrect = incorrectOptions
         .sort(() => Math.random() - 0.5)
@@ -429,28 +428,33 @@ export default function TeacherPollRoom() {
 
         const rawQuestions = response.data.questions || [];
 
-        const cleanQuestions = rawQuestions
-          .filter((q: APIQuestion) => typeof q.questionText === 'string' && q.questionText.trim() !== '')
-          .map((q: APIQuestion): GeneratedQuestion => {
-            const options = Array.isArray(q.options) ? q.options.map((opt) => opt.text ?? '') : [];
-            const correctOptionIndex = Array.isArray(q.options) ? q.options.findIndex((opt) => opt.correct) : 0;
+        // Combine filter + map into single reduce for better performance
+        const cleanQuestions: GeneratedQuestion[] = rawQuestions.reduce((acc: GeneratedQuestion[], q: APIQuestion) => {
+          if (typeof q.questionText !== 'string' || q.questionText.trim() === '') {
+            return acc;
+          }
+          
+          const options = Array.isArray(q.options) ? q.options.map((opt) => opt.text ?? '') : [];
+          const correctOptionIndex = Array.isArray(q.options) ? q.options.findIndex((opt) => opt.correct) : 0;
 
-            const validCorrectOptionIndex = correctOptionIndex >= 0 && correctOptionIndex < options.length
-              ? correctOptionIndex
-              : 0;
+          const validCorrectOptionIndex = correctOptionIndex >= 0 && correctOptionIndex < options.length
+            ? correctOptionIndex
+            : 0;
 
-            return {
-              question: q.questionText,
-              options: options,
-              correctOptionIndex: validCorrectOptionIndex,
-            };
+          acc.push({
+            question: q.questionText,
+            options: options,
+            correctOptionIndex: validCorrectOptionIndex,
           });
+          
+          return acc;
+        }, []);
 
         const filteredQuestions = cleanQuestions.map((q: GeneratedQuestion) => filterQuestionOptions(q));
 
         if (filteredQuestions.length > 0) {
           queuedGeneratedQuestionsRef.current = [...queuedGeneratedQuestionsRef.current, ...filteredQuestions];
-          setQueuedGeneratedQuestions([...queuedGeneratedQuestionsRef.current]);
+          setQueuedGeneratedQuestions(prev => [...prev, ...filteredQuestions]);
         }
       } catch (err) {
         // Failed to process queued chunk

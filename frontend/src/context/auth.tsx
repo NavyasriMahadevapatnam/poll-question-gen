@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const token = await firebaseUser.getIdToken();
         localStorage.setItem('auth-token', token);
 
-        // 👇 You can customize this part (e.g., get role from DB)
+        // Cache localStorage read
         const { uid, email, displayName } = firebaseUser;
         const storedRole = localStorage.getItem('user-role') as Role;
         if (storedRole) {
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [setUser, clearUser]);
 
   // Login function that sets the user in the store
   const login = (selectedRole: Role, uid: string, email: string, name?: string) => {

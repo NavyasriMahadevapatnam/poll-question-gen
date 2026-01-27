@@ -82,11 +82,12 @@ export default function ManageRoom() {
 
     const calculateParticipants = (room: Room) => {
         const uniqueParticipants = new Set();
-        room.polls.forEach(poll => {
-            poll.answers.forEach(answer => {
+        // Combine nested forEach into single iteration where possible
+        for (const poll of room.polls) {
+            for (const answer of poll.answers) {
                 uniqueParticipants.add(answer.userId);
-            });
-        });
+            }
+        }
         return uniqueParticipants.size;
     };
 
