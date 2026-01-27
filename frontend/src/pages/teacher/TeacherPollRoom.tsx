@@ -19,6 +19,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ThemeToggle } from "@/components/theme-toggle";
 import socket from "@/lib/api/socket";
 
+// Extracted hooks
+import { usePollManagement } from "./hooks/usePollManagement";
+import { useQuestionGeneration } from "./hooks/useQuestionGeneration";
+import { useAudioTranscription } from "./hooks/useAudioTranscription";
+import { useRoomManagement } from "./hooks/useRoomManagement";
+
+// Extracted components
+import { StudentsSidebar } from "./components/StudentsSidebar";
+import { PollCreationModal } from "./components/PollCreationModal";
+import { EndRoomConfirmDialog } from "./components/EndRoomConfirmDialog";
+
 const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text).then(() => {
     toast.success("Room code copied to clipboard!");
