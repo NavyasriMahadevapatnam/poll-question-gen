@@ -6,6 +6,7 @@ import {
   Req,
   Res,
   Body,
+  UseBefore,
 } from 'routing-controllers';
 import {injectable, inject} from 'inversify';
 import {Request, Response} from 'express';
@@ -28,6 +29,7 @@ import {QuestionBank} from '../quizzes/classes/transformers/QuestionBank.js';
 import {BaseQuestion} from '../quizzes/classes/transformers/Question.js';
 import {CreateItemBody} from '../courses/classes/validators/ItemValidators.js';
 import {ItemType} from '#shared/interfaces/models.js';
+import {AiRateLimiter, StrictAiRateLimiter, UserAiRateLimiter} from '#shared/middleware/rateLimiter.js';
 
 @injectable()
 @JsonController('/genai')
@@ -48,6 +50,7 @@ export default class GenAIVideoController {
 
   @Post('/generate/transcript')
   @HttpCode(200)
+  @UseBefore(StrictAiRateLimiter, UserAiRateLimiter)
   async generateTranscript(
     @Body() body: {youtubeUrl: string},
     @Req() req: Request,
@@ -124,6 +127,7 @@ export default class GenAIVideoController {
 
   @Post('/generate/transcript/segment')
   @HttpCode(200)
+  @UseBefore(AiRateLimiter, UserAiRateLimiter)
   async segmentTranscript(
     @Body() body: {transcript: string; model?: string},
     @Res() res: Response,
@@ -161,6 +165,7 @@ export default class GenAIVideoController {
 
   @Post('/generate/questions')
   @HttpCode(200)
+  @UseBefore(AiRateLimiter, UserAiRateLimiter)
   async generateQuestions(
     @Body()
     body: {
@@ -194,6 +199,7 @@ export default class GenAIVideoController {
 
   @Post('/generate-course-items-from-video')
   @HttpCode(200)
+  @UseBefore(StrictAiRateLimiter, UserAiRateLimiter)
   async generateCourseItemsFromVideo(
     @Body()
     body: {
@@ -496,4 +502,4 @@ export default class GenAIVideoController {
     }
   }
 }
-*/ 
+*/

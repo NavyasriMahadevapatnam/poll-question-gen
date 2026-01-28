@@ -1,20 +1,27 @@
-import { useMutation } from "@tanstack/react-query";
-import axios from "axios";
-import { toast } from "sonner";
+import { useMutation } from '@tanstack/react-query';
+import axios from 'axios';
+import { toast } from 'sonner';
 
 // Create a pre-configured axios instance
 const API_URL = import.meta.env.VITE_API_URL;
 const api = axios.create({
   baseURL: API_URL,
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
 // Centralized error handling function
 const handleApiError = (error: any, message: string) => {
   console.error(error);
-  toast.error(message);
+
+  // Skip toast if it's a 429 (already handled by axios interceptor)
+  if (error?.response?.status === 429) {
+    return;
+  }
+
+  const errorMsg = error?.response?.data?.error || error?.response?.data?.message || message;
+  toast.error(errorMsg);
 };
 
 type TranscriptResponse = {
@@ -26,26 +33,20 @@ type TranscriptInput = { youtubeUrl: string };
 
 export function useGenerateTranscript(
   onSuccess: (data: TranscriptResponse) => void,
-  onError?: (error: any) => void
+  onError?: (error: any) => void,
 ) {
   return useMutation<TranscriptResponse, unknown, FormData | TranscriptInput>({
     mutationFn: async (input) => {
       try {
         const isFormData = input instanceof FormData;
-        const response = await api.post<TranscriptResponse>(
-          "/genai/generate/transcript",
-          input,
-          {
-            headers: {
-              "Content-Type": isFormData
-                ? "multipart/form-data"
-                : "application/json",
-            },
-          }
-        );
+        const response = await api.post<TranscriptResponse>('/genai/generate/transcript', input, {
+          headers: {
+            'Content-Type': isFormData ? 'multipart/form-data' : 'application/json',
+          },
+        });
         return response.data;
       } catch (error: any) {
-        handleApiError(error, "Failed to generate transcript");
+        handleApiError(error, 'Failed to generate transcript');
         throw error;
       }
     },
@@ -62,11 +63,11 @@ type SegmentResponse = {
 
 export function useSegmentTranscript(
   onSuccess: (segment: SegmentResponse) => void,
-  onError?: (error: any) => void
+  onError?: (error: any) => void,
 ) {
   return useMutation<SegmentResponse, unknown, { transcript: string }>({
     mutationFn: async ({ transcript }) => {
-      const response = await api.post<SegmentResponse>("/genai/generate/transcript/segment", {
+      const response = await api.post<SegmentResponse>('/genai/generate/transcript/segment', {
         transcript,
       });
       return response.data;
@@ -89,19 +90,19 @@ type GenerateQuestionsResponse = {
 
 export function useGenerateQuestions(
   onSuccess: (questions: string[]) => void,
-  onError?: (error: any) => void
+  onError?: (error: any) => void,
 ) {
   return useMutation<GenerateQuestionsResponse, unknown, GenerateQuestionsInput>({
-    mutationFn: async ({segments, questionsPerSegment = 2, model }) => {
+    mutationFn: async ({ segments, questionsPerSegment = 2, model }) => {
       try {
-        const response = await api.post<GenerateQuestionsResponse>("/genai/generate/questions", {
+        const response = await api.post<GenerateQuestionsResponse>('/genai/generate/questions', {
           segments,
           globalQuestionSpecification: [{ count: questionsPerSegment }],
           model,
         });
         return response.data;
       } catch (error: any) {
-        handleApiError(error, "Failed to generate questions");
+        handleApiError(error, 'Failed to generate questions');
         throw error;
       }
     },
