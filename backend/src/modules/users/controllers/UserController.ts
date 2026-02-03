@@ -11,9 +11,7 @@ import {
   HttpCode,
   Param,
   Params,
-  NotFoundError,
   Patch,
-  BadRequestError,
 } from 'routing-controllers';
 import { OpenAPI, ResponseSchema } from 'routing-controllers-openapi';
 import {
@@ -25,6 +23,8 @@ import {
   UserProfileResponse,
 } from '../classes/validators/UserValidators.js';
 import { UserModel } from '#root/shared/database/models/User.js';
+import { logger } from '#root/shared/utils/logger.js';
+import { ApiError } from '#root/shared/classes/ApiError.js';
 
 @OpenAPI({ tags: ['Users'] })
 @JsonController('/users', { transformResponse: true })
@@ -33,7 +33,7 @@ export class UserController {
   constructor(
     @inject(USERS_TYPES.UserService)
     private readonly userService: UserService,
-  ) { }
+  ) {}
 
   /**
    * Get full user object by Firebase UID (transformed)
@@ -46,11 +46,13 @@ export class UserController {
   @HttpCode(200)
   @ResponseSchema(UserByFirebaseUIDResponse)
   @ResponseSchema(UserNotFoundErrorResponse, { statusCode: 404 })
-  async getUserByFirebaseUID(
-    @Params() params: UserByFirebaseUIDParams,
-  ): Promise<User> {
+  async getUserByFirebaseUID(@Params() params: UserByFirebaseUIDParams): Promise<User> {
+    logger.info('Fetching user by Firebase UID', { firebaseUID: params.firebaseUID });
     const user = await this.userService.findByFirebaseUID(params.firebaseUID);
-    if (!user) throw new NotFoundError('User not found');
+    if (!user) {
+      logger.warn('User not found', { firebaseUID: params.firebaseUID });
+      throw ApiError.notFound('User not found');
+    }
     return new User(user);
   }
 
@@ -68,6 +70,7 @@ export class UserController {
     @Param('firebaseUID') firebaseUID: string,
     @Body() body: CreateUserProfileBody,
   ) {
+    logger.info('Finding or creating user profile', { firebaseUID, email: body.email });
     const user = await this.userService.findOrCreateByFirebaseUID(firebaseUID, body);
     return {
       id: user._id?.toString() || '',
@@ -100,8 +103,12 @@ export class UserController {
   @HttpCode(200)
   @ResponseSchema(UserProfileResponse)
   async getProfile(@Param('id') id: string) {
+    logger.info('Fetching user profile', { userId: id });
     const user = await this.userService.getProfile(id);
-    if (!user) throw new NotFoundError('User not found');
+    if (!user) {
+      logger.warn('User profile not found', { userId: id });
+      throw ApiError.notFound('User not found');
+    }
     return user;
   }
 
@@ -114,10 +121,8 @@ export class UserController {
   @Put('/:id/profile')
   @HttpCode(200)
   @ResponseSchema(UserProfileResponse)
-  async updateProfile(
-    @Param('id') id: string,
-    @Body() body: UpdateUserProfileBody,
-  ) {
+  async updateProfile(@Param('id') id: string, @Body() body: UpdateUserProfileBody) {
+    logger.info('Updating user profile', { userId: id });
     const updated = await this.userService.updateProfile(id, body);
     return updated;
   }
@@ -132,8 +137,12 @@ export class UserController {
   @HttpCode(200)
   @ResponseSchema(UserProfileResponse)
   async getProfileByFirebaseUID(@Param('firebaseUID') firebaseUID: string) {
+    logger.info('Fetching profile by Firebase UID', { firebaseUID });
     const user = await this.userService.findByFirebaseUID(firebaseUID);
-    if (!user) throw new NotFoundError('User not found');
+    if (!user) {
+      logger.warn('User not found', { firebaseUID });
+      throw ApiError.notFound('User not found');
+    }
     return {
       id: user._id?.toString() || '',
       firebaseUID: user.firebaseUID,
@@ -164,24 +173,19 @@ export class UserController {
   })
   @Patch('/firebase/:firebaseUID/role')
   @HttpCode(200)
-  async updateRole(
-    @Param('firebaseUID') firebaseUID: string,
-    @Body() body: { role: string },
-  ) {
+  async updateRole(@Param('firebaseUID') firebaseUID: string, @Body() body: { role: string }) {
     const { role } = body;
     if (!role || typeof role !== 'string') {
-      throw new BadRequestError('Role must be a non-empty string');
+      logger.warn('Invalid role provided', { firebaseUID, role });
+      throw ApiError.badRequest('Role must be a non-empty string');
     }
 
-    try {
-      const updatedUser = await this.userService.updateRoleByFirebaseUID(firebaseUID, role);
-      return {
-        id: updatedUser._id?.toString() || '',
-        firebaseUID: updatedUser.firebaseUID,
-        role: updatedUser.role,
-      };
-    } catch (err: any) {
-      throw new BadRequestError(err.message);
-    }
+    logger.info('Updating user role', { firebaseUID, role });
+    const updatedUser = await this.userService.updateRoleByFirebaseUID(firebaseUID, role);
+    return {
+      id: updatedUser._id?.toString() || '',
+      firebaseUID: updatedUser.firebaseUID,
+      role: updatedUser.role,
+    };
   }
 }

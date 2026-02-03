@@ -2,27 +2,28 @@ import { JsonController, Get, Param, Authorized } from 'routing-controllers';
 import { inject, injectable } from 'inversify';
 import { DashboardService } from '../services/DashboardService.js';
 import { OpenAPI } from 'routing-controllers-openapi';
+import { logger } from '#root/shared/utils/logger.js';
 
 @injectable()
 @JsonController()
-@OpenAPI({ tags: ['Dashboards'], })
+@OpenAPI({ tags: ['Dashboards'] })
 // @Authorized(['admin', 'teacher']) // only teachers/admins can fetch other students
 export class DashboardController {
-    constructor(
-        @inject(DashboardService) private dashboardService: DashboardService
-    ) { }
+  constructor(@inject(DashboardService) private dashboardService: DashboardService) {}
 
-    // Student Dashboard
-    //@Authorized(['student'])
-    @Get('/students/dashboard/:studentId')
-    async getStudentDashboard(@Param('studentId') studentId: string) {
-        return await this.dashboardService.getStudentDashboardData(studentId);
-    }
+  // Student Dashboard
+  //@Authorized(['student'])
+  @Get('/students/dashboard/:studentId')
+  async getStudentDashboard(@Param('studentId') studentId: string) {
+    logger.info('Fetching student dashboard', { studentId });
+    return await this.dashboardService.getStudentDashboardData(studentId);
+  }
 
-    // Teacher Dashboard
-    //@Authorized(['teacher'])
-    @Get('/teachers/dashboard/:teacherId')
-    async getTeacherDashboard(@Param('teacherId') teacherId: string) {
-        return await this.dashboardService.getTeacherDashboardData(teacherId);
-    }
+  // Teacher Dashboard
+  //@Authorized(['teacher'])
+  @Get('/teachers/dashboard/:teacherId')
+  async getTeacherDashboard(@Param('teacherId') teacherId: string) {
+    logger.info('Fetching teacher dashboard', { teacherId });
+    return await this.dashboardService.getTeacherDashboardData(teacherId);
+  }
 }
