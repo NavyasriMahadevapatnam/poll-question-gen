@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
-import {injectable} from 'inversify';
+import { injectable } from 'inversify';
+import { logger } from '#root/shared/utils/logger.js';
 
 @injectable()
 export class CleanupService {
@@ -13,14 +14,14 @@ export class CleanupService {
    */
   public async cleanup(paths: (string | null | undefined)[]): Promise<void> {
     if (!paths || paths.length === 0) {
-      console.log('CleanupService: No paths provided for cleanup.');
+      logger.info('CleanupService: No paths provided for cleanup.');
       return;
     }
 
-    console.log(
-      'CleanupService: Starting cleanup for paths:',
-      paths.filter(p => p),
-    );
+    logger.info('CleanupService: Starting cleanup', {
+      pathCount: paths.filter((p) => p).length,
+      paths: paths.filter((p) => p),
+    });
 
     for (const path of paths) {
       if (path) {
@@ -41,13 +42,11 @@ export class CleanupService {
 
           const stats = await fs.lstat(path); // Use lstat to avoid following symlinks, though stat is often fine.
           if (stats.isDirectory()) {
-            await fs.rm(path, {recursive: true, force: true});
-            console.log(
-              `CleanupService: Successfully deleted directory: ${path}`,
-            );
+            await fs.rm(path, { recursive: true, force: true });
+            logger.info('Successfully deleted directory', { path });
           } else {
             await fs.unlink(path);
-            console.log(`CleanupService: Successfully deleted file: ${path}`);
+            logger.info('Successfully deleted file', { path });
           }
         } catch (error: any) {
           // Common errors:
@@ -55,18 +54,17 @@ export class CleanupService {
           // - EPERM/EACCES: permissions error.
           // - EISDIR: trying to unlink a directory (use rmdir or rm instead).
           if (error.code === 'ENOENT') {
-            console.log(
-              `CleanupService: Path not found, presumed already cleaned up: ${path}`,
-            );
+            logger.info('Path not found, presumed already cleaned up', { path });
           } else {
-            console.error(
-              `CleanupService: Error deleting path ${path}: ${error.message}`,
-            );
+            logger.error('Error deleting path', error, {
+              path,
+              code: error.code,
+            });
             // Do not re-throw; attempt to clean up other paths.
           }
         }
       }
     }
-    console.log('CleanupService: Finished cleanup process.');
+    logger.info('CleanupService: Finished cleanup process.');
   }
 }

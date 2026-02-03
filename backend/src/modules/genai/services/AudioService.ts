@@ -3,9 +3,11 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
-import {injectable} from 'inversify';
-import {InternalServerError} from 'routing-controllers';
-import {fileURLToPath} from 'url';
+import { injectable } from 'inversify';
+import { InternalServerError } from 'routing-controllers';
+import { fileURLToPath } from 'url';
+import { logger } from '#root/shared/utils/logger.js';
+import { ApiError } from '#root/shared/classes/ApiError.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,18 +22,21 @@ export class AudioService {
    */
   public async extractAudio(videoPath: string): Promise<string> {
     if (!fs.existsSync(videoPath)) {
-      throw new InternalServerError(`Input video file not found: ${videoPath}`);
+      logger.error('Input video file not found', undefined, { videoPath });
+      throw ApiError.notFound(`Input video file not found: ${videoPath}`);
     }
 
     const tempAudioDir = path.join(__dirname, '..', 'temp_audio'); // Ensure this aligns with actual project structure if __dirname is services/
-    await fsp.mkdir(tempAudioDir, {recursive: true});
+    await fsp.mkdir(tempAudioDir, { recursive: true });
 
     const processedAudioFileName = `${Date.now()}_${path.basename(videoPath, path.extname(videoPath))}_processed.wav`;
     const processedAudioPath = path.join(tempAudioDir, processedAudioFileName);
 
-    console.log(
-      `Standardizing ${videoPath} to ${processedAudioPath} (16kHz, 1-channel WAV)`,
-    );
+    logger.info('Standardizing audio', {
+      inputPath: videoPath,
+      outputPath: processedAudioPath,
+      format: '16kHz, 1-channel WAV',
+    });
 
     return new Promise<string>((resolve, reject) => {
       ffmpeg(videoPath)
@@ -39,27 +44,26 @@ export class AudioService {
         .audioFrequency(16000)
         .audioChannels(1)
         .on('error', (ffmpegErr: Error) => {
-          console.error('FFmpeg standardization error:', ffmpegErr);
-          reject(
-            new InternalServerError(
-              `FFmpeg audio standardization failed: ${ffmpegErr.message}`,
-            ),
-          );
+          logger.error('FFmpeg standardization failed', ffmpegErr, {
+            videoPath,
+            processedAudioPath,
+          });
+          reject(ApiError.internal(`FFmpeg audio standardization failed: ${ffmpegErr.message}`));
         })
         .on('end', async () => {
-          console.log('FFmpeg standardization finished:', processedAudioPath);
+          logger.info('FFmpeg standardization finished', { processedAudioPath });
 
           // Clean up the original video file downloaded by VideoService, as it's now processed.
           // The videoPath is likely a temporary file from yt-dlp.
           try {
             await fsp.unlink(videoPath);
-            console.log('Cleaned up intermediate video file:', videoPath);
+            logger.info('Cleaned up intermediate video file', { videoPath });
           } catch (unlinkErr: any) {
             // Log error but don't fail the whole process if cleanup fails
-            console.warn(
-              `Error deleting intermediate video file ${videoPath}:`,
-              unlinkErr,
-            );
+            logger.warn('Error deleting intermediate video file', {
+              videoPath,
+              error: unlinkErr.message,
+            });
           }
 
           resolve(processedAudioPath);

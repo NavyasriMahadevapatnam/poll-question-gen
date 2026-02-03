@@ -1,4 +1,5 @@
 export * from './classes/BaseService.js';
+export * from './classes/ApiError.js';
 export * from './constants/transformerConstants.js';
 export * from './database/index.js';
 export * from './functions/index.js';

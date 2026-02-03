@@ -5,6 +5,8 @@ import { IUserRepository } from '#root/shared/database/interfaces/IUserRepositor
 import { MongoDatabase } from '#root/shared/database/providers/mongo/MongoDatabase.js';
 import { GLOBAL_TYPES } from '#root/types.js';
 import type { IUser } from '#shared/interfaces/models.js';
+import { logger } from '#root/shared/utils/logger.js';
+import { ApiError } from '#root/shared/classes/ApiError.js';
 
 @injectable()
 export class UserService extends BaseService {
@@ -17,7 +19,6 @@ export class UserService extends BaseService {
 
   async findOrCreateByFirebaseUID(firebaseUID: string, data: Partial<IUser>): Promise<IUser> {
     let user = await this.userRepo.findByFirebaseUID(firebaseUID);
-    //console.log("findOrCreateByFirebaseUID - role:", user.role);
     if (!user) {
       const userId = await this.userRepo.create({
         firebaseUID,
@@ -25,7 +26,7 @@ export class UserService extends BaseService {
         lastName: data.lastName || '',
         email: data.email || '',
         avatar: data.avatar || null,
-        role: data.role || "null",
+        role: data.role || 'null',
         phoneNumber: data.phoneNumber || null,
         institution: data.institution || null,
         designation: data.designation || null,
@@ -74,7 +75,21 @@ export class UserService extends BaseService {
 
   async updateProfile(
     userId: string,
-    data: Partial<Pick<IUser, 'firstName' | 'lastName' | 'avatar' | 'phoneNumber' | 'bio' | 'institution' | 'designation' | 'dateOfBirth' | 'address' | 'emergencyContact'>>
+    data: Partial<
+      Pick<
+        IUser,
+        | 'firstName'
+        | 'lastName'
+        | 'avatar'
+        | 'phoneNumber'
+        | 'bio'
+        | 'institution'
+        | 'designation'
+        | 'dateOfBirth'
+        | 'address'
+        | 'emergencyContact'
+      >
+    >,
   ) {
     const updated = await this.userRepo.updateById(userId, {
       ...data,
@@ -118,21 +133,22 @@ export class UserService extends BaseService {
 
   async updateRoleByFirebaseUID(firebaseUID: string, role: string) {
     if (!role || typeof role !== 'string') {
-      throw new Error('Role must be a non-empty string');
+      logger.warn('Invalid role provided for update', { firebaseUID, role });
+      throw ApiError.badRequest('Role must be a non-empty string');
     }
 
     const updatedUser = await this.userRepo.updateRole(firebaseUID, role);
 
-
     if (!updatedUser) {
-      throw new Error('User not found');
+      logger.error('User not found for role update', undefined, { firebaseUID });
+      throw ApiError.notFound('User not found');
     }
     return updatedUser;
   }
 
-  async findUserByEmail(email:string):Promise<IUser>{
-    console.log(email)
-    const result = await this.userRepo.findByEmail(email)
-    return result
+  async findUserByEmail(email: string): Promise<IUser> {
+    logger.debug('Finding user by email', { email });
+    const result = await this.userRepo.findByEmail(email);
+    return result;
   }
 }

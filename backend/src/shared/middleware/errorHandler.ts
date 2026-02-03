@@ -1,4 +1,4 @@
-import {createLogger, format, transports} from 'winston';
+import { createLogger, format, transports } from 'winston';
 import {
   IsArray,
   IsDefined,
@@ -14,10 +14,11 @@ import {
   HttpError,
   UnauthorizedError,
 } from 'routing-controllers';
-import {Request, Response} from 'express';
-import {JSONSchema} from 'class-validator-jsonschema';
+import { Request, Response } from 'express';
+import { JSONSchema } from 'class-validator-jsonschema';
 import { Type } from 'class-transformer';
 import * as Sentry from '@sentry/node';
+import { ApiError } from '../classes/ApiError.js';
 
 const logger = createLogger({
   level: 'info',
@@ -27,7 +28,7 @@ const logger = createLogger({
     // - Write all logs with importance level of `error` or higher to `error.log`
     //   (i.e., error, fatal, but not other levels)
     //
-    new transports.File({filename: 'error.log', level: 'error'}),
+    new transports.File({ filename: 'error.log', level: 'error' }),
     //
     // - Write all logs with importance level of `info` or higher to `combined.log`
     //   (i.e., fatal, error, warn, and info, but not trace)
@@ -79,7 +80,7 @@ class ValidationErrorResponse {
     readOnly: true,
   })
   @IsObject() // Ensures 'constraints' is an object
-  constraints!: {[type: string]: string};
+  constraints!: { [type: string]: string };
 
   @JSONSchema({
     type: 'array',
@@ -88,8 +89,8 @@ class ValidationErrorResponse {
     readOnly: true,
   })
   @IsArray() // Ensures 'children' is an array
-  @ValidateNested({each: true})
-  @Type(()=>ValidationErrorResponse) // Ensures each element inside 'children' is validated
+  @ValidateNested({ each: true })
+  @Type(() => ValidationErrorResponse) // Ensures each element inside 'children' is validated
   children!: ValidationErrorResponse[];
 
   @JSONSchema({
@@ -99,7 +100,7 @@ class ValidationErrorResponse {
   })
   @IsObject() // Ensures 'contexts' is an object
   @IsOptional() // Makes 'contexts' optional
-  contexts!: {[type: string]: any};
+  contexts!: { [type: string]: any };
 }
 
 class DefaultErrorResponse {
@@ -131,7 +132,7 @@ class BadRequestErrorResponse {
   errors?: ValidationErrorResponse;
 }
 
-@Middleware({type: 'after'})
+@Middleware({ type: 'after' })
 export class HttpErrorHandler implements ExpressErrorMiddlewareInterface {
   error(error: any, request: Request, response: Response): void {
     let eventId;
@@ -149,7 +150,7 @@ export class HttpErrorHandler implements ExpressErrorMiddlewareInterface {
       status: error.httpCode || 500,
       sentryEventId: eventId || 'unknown',
     });
-    
+
     if (response.headersSent) {
       // If the response is already sent, don't try to send again
       return;
@@ -211,35 +212,29 @@ export class HttpErrorHandler implements ExpressErrorMiddlewareInterface {
     //     return result;
     // }
 
-    if (error instanceof UnauthorizedError) {
+    if (error instanceof ApiError) {
+      response.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+        ...(error.context && { details: error.context }),
+        sentryEventId: eventId,
+      });
+    } else if (error instanceof UnauthorizedError) {
       response
         .status(401)
         .json(
-          new ErrorResponse<null>(
-            'You are not authorized to access this resource.',
-            null,
-            eventId
-          ),
+          new ErrorResponse<null>('You are not authorized to access this resource.', null, eventId),
         );
     } else if (error instanceof HttpError) {
-      if (
-        'errors' in error &&
-        (error.errors as any)[0] instanceof ValidationError
-      ) {
+      if ('errors' in error && (error.errors as any)[0] instanceof ValidationError) {
         response
           .status(400)
-          .json(
-            new ErrorResponse<typeof error.errors>(error.message, error.errors, eventId),
-          );
+          .json(new ErrorResponse<typeof error.errors>(error.message, error.errors, eventId));
       } else {
-        response
-          .status(error.httpCode)
-          .json(new ErrorResponse<null>(error.message, null, eventId));
+        response.status(error.httpCode).json(new ErrorResponse<null>(error.message, null, eventId));
       }
     } else if (error instanceof Error) {
-      response.status(500).json(
-        new ErrorResponse<null>(error.message, null, eventId)
-      );
+      response.status(500).json(new ErrorResponse<null>(error.message, null, eventId));
     } else {
       response
         .status(500)
@@ -248,4 +243,4 @@ export class HttpErrorHandler implements ExpressErrorMiddlewareInterface {
   }
 }
 
-export {DefaultErrorResponse, ValidationErrorResponse, BadRequestErrorResponse};
+export { DefaultErrorResponse, ValidationErrorResponse, BadRequestErrorResponse };

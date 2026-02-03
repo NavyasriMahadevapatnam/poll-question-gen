@@ -6,6 +6,10 @@ import { extractJSONFromMarkdown } from '../utils/extractJSONFromMarkdown.js';
 import { cleanTranscriptLines } from '../utils/cleanTranscriptLines.js';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { aiConfig } from '#root/config/ai.js';
+import { retryIfRetryable } from '#root/shared/utils/retry.js';
+import { logger } from '#root/shared/utils/logger.js';
+import { ApiError } from '#shared/index.js';
+import { SEGMENTATION, AI_QUESTION_DEFAULTS } from '#root/shared/constants/pollConstants.js';
 
 // --- Type Definitions ---
 export interface TranscriptSegment {
@@ -32,39 +36,42 @@ export class AIContentService {
   //private readonly ollimaApiBaseUrl = 'http://localhost:11434/api';
   private readonly ollimaApiBaseUrl = `http://${aiConfig.serverIP}:${aiConfig.serverPort}/api`;
   private readonly llmApiUrl = `${this.ollimaApiBaseUrl}/generate`;
-  
+
   private createProxyAgent() {
     try {
       return new SocksProxyAgent('socks5://localhost:1055');
     } catch (error) {
-      console.error(`Failed to create SOCKS proxy agent: ${error}`);
+      logger.error('Failed to create SOCKS proxy agent', error as Error);
       return undefined;
     }
   }
-  
+
   private getRequestConfig(): AxiosRequestConfig {
     const config: AxiosRequestConfig = {
       timeout: 180000, // 3 min request timeout
     };
-    
+
     try {
-      const isLocal = this.ollimaApiBaseUrl.includes('localhost') || this.ollimaApiBaseUrl.includes('127.0.0.1');
+      const isLocal =
+        this.ollimaApiBaseUrl.includes('localhost') || this.ollimaApiBaseUrl.includes('127.0.0.1');
       if (aiConfig.useProxy && !isLocal) {
         const proxyAgent = this.createProxyAgent();
         if (proxyAgent) {
-          console.log(`[AIContentService] Using SOCKS proxy for connection to ${this.ollimaApiBaseUrl}`);
+          logger.debug('Using SOCKS proxy for Ollama connection', {
+            url: this.ollimaApiBaseUrl,
+          });
           config.httpAgent = proxyAgent;
           config.httpsAgent = proxyAgent;
         } else {
-          console.warn(`[AIContentService] Failed to create proxy agent, falling back to direct connection`);
+          logger.warn('Failed to create proxy agent, falling back to direct connection');
         }
       } else {
-        console.log(`[AIContentService] Direct connection to ${this.ollimaApiBaseUrl} (proxy disabled)`);
+        logger.debug('Direct connection to Ollama', { url: this.ollimaApiBaseUrl });
       }
     } catch (error) {
-      console.error(`[AIContentService] Error configuring request: ${error}`);
+      logger.error('Error configuring request', error as Error);
     }
-    
+
     return config;
   }
 
@@ -72,13 +79,17 @@ export class AIContentService {
   public async segmentTranscript(
     transcript: string,
     model = 'gemma3',
-    desiredSegments = 3 // <-- make fallback segments configurable
+    desiredSegments = SEGMENTATION.DEFAULT_SEGMENTS,
   ): Promise<Record<string, string>> {
     if (!transcript?.trim()) {
       throw new HttpError(400, 'Transcript text is required and must be non-empty.');
     }
 
-    console.log(`[segmentTranscript] Processing transcript length: ${transcript.length} chars, model: ${model}`);
+    logger.info('Processing transcript for segmentation', {
+      transcriptLength: transcript.length,
+      model,
+      desiredSegments,
+    });
 
     const prompt = `Analyze the following timed lecture transcript. Segment into meaningful subtopics (max ${desiredSegments} segments).
 Format: each line as [start_time --> end_time] text OR start_time --> end_time text.
@@ -101,22 +112,48 @@ JSON:`;
     let segments: TranscriptSegment[] = [];
 
     try {
-      console.log(`[segmentTranscript] Connecting to Ollama API at ${this.llmApiUrl} with model ${model}`);
-      const config = this.getRequestConfig();
-      
-      const response = await axios.post(this.llmApiUrl, {
+      logger.info('Connecting to Ollama API for transcript segmentation', {
+        url: this.llmApiUrl,
         model,
-        prompt,
-        stream: false,
-        options: { temperature: 0.1, top_p: 0.9 },
-      }, config);
+        transcriptLength: transcript.length,
+      });
+
+      const config = this.getRequestConfig();
+
+      // Wrap Ollama API call with retry logic
+      const response = await retryIfRetryable(
+        () =>
+          axios.post(
+            this.llmApiUrl,
+            {
+              model,
+              prompt,
+              stream: false,
+              options: { temperature: 0.1, top_p: 0.9 },
+            },
+            config,
+          ),
+        {
+          maxRetries: 3,
+          initialDelayMs: 2000,
+          onRetry: (error, attempt) => {
+            logger.warn('Retrying Ollama transcript segmentation', {
+              attempt,
+              error: error.message,
+              model,
+            });
+          },
+        },
+      );
 
       const generatedText = response.data?.response;
       if (typeof generatedText !== 'string') {
-        throw new InternalServerError('Unexpected Ollima response format.');
+        throw ApiError.internal('Unexpected Ollama response format.');
       }
 
-      console.log('[segmentTranscript] Response preview:', generatedText.slice(0, 300));
+      logger.debug('Ollama segmentation response received', {
+        responseLength: generatedText.length,
+      });
 
       let jsonToParse = '';
       try {
@@ -131,7 +168,7 @@ JSON:`;
           .replace(/\s+/g, ' ')
           .trim();
 
-        console.log('[segmentTranscript] Attempting to parse JSON...');
+        logger.debug('Attempting to parse segmentation JSON...');
         segments = JSON.parse(fixedJson);
 
         if (!Array.isArray(segments) || segments.length === 0) {
@@ -144,14 +181,17 @@ JSON:`;
           }
         });
 
-        console.log(`[segmentTranscript] Successfully parsed ${segments.length} segments.`);
+        logger.info('Successfully parsed segments from Ollama', {
+          segmentCount: segments.length,
+        });
       } catch (parseError: any) {
-        console.error('[segmentTranscript] JSON parse failed:', parseError.message);
-        console.error('[segmentTranscript] Raw text preview:', generatedText.slice(0, 200));
+        logger.error('JSON parse failed in segmentTranscript', parseError, {
+          rawTextPreview: generatedText.slice(0, 200),
+        });
 
         // Fallback segmentation
-        console.log('[segmentTranscript] Using fallback segmentation...');
-        const lines = transcript.split('\n').filter(line => line.trim() !== '');
+        logger.info('Using fallback segmentation');
+        const lines = transcript.split('\n').filter((line) => line.trim() !== '');
         const desiredSegments = 3;
         const minLines = 8;
         segments = [];
@@ -159,12 +199,15 @@ JSON:`;
           // Transcript is very small → single segment
           const lastLine = lines[lines.length - 1] || '';
           const timeMatch = lastLine.match(/(\d{2}:\d{2}(?::\d{2})?\.\d{3})/g);
-          const endTime = timeMatch && timeMatch.length > 0 ? timeMatch[timeMatch.length - 1] : '00:00.000';
+          const endTime =
+            timeMatch && timeMatch.length > 0 ? timeMatch[timeMatch.length - 1] : '00:00.000';
           segments.push({
             end_time: endTime,
             transcript_lines: lines,
           });
-          console.log(`[segmentTranscript] Small transcript detected. Created 1 segment with ${lines.length} lines.`);
+          logger.info('Small transcript detected, created single segment', {
+            lineCount: lines.length,
+          });
         } else {
           // Larger transcript → split into segments with minLines
           const linesPerSegment = Math.max(minLines, Math.ceil(lines.length / desiredSegments));
@@ -172,39 +215,51 @@ JSON:`;
             const segmentLines = lines.slice(i, i + linesPerSegment);
             const lastLine = segmentLines[segmentLines.length - 1] || '';
             const timeMatch = lastLine.match(/(\d{2}:\d{2}(?::\d{2})?\.\d{3})/g);
-            const endTime = timeMatch && timeMatch.length > 0 ? timeMatch[timeMatch.length - 1] : `00:${String(i).padStart(2, '0')}.000`;
+            const endTime =
+              timeMatch && timeMatch.length > 0
+                ? timeMatch[timeMatch.length - 1]
+                : `00:${String(i).padStart(2, '0')}.000`;
             segments.push({
               end_time: endTime,
               transcript_lines: segmentLines,
             });
           }
-          console.log(`[segmentTranscript] Created ${segments.length} fallback segments.`);
+          logger.info('Created fallback segments', {
+            segmentCount: segments.length,
+          });
         }
       }
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
-        console.error('[segmentTranscript] Ollama API error:', error.message);
-        console.error('[segmentTranscript] Error details:', {
+        logger.error('Ollama API error in segmentTranscript', error, {
           code: error.code,
-          // Access network error details safely
           networkError: (error as any).cause,
-          config: error.config ? {
-            url: error.config.url,
-            method: error.config.method,
-            timeout: error.config.timeout,
-            hasProxy: !!(error.config.httpAgent || error.config.httpsAgent)
-          } : 'No config'
+          config: error.config
+            ? {
+                url: error.config.url,
+                method: error.config.method,
+                timeout: error.config.timeout,
+                hasProxy: !!(error.config.httpAgent || error.config.httpsAgent),
+              }
+            : 'No config',
         });
-        
+
         if (error.code === 'ETIMEDOUT') {
-          throw new InternalServerError(`Connection to Ollama server timed out. Please check network connectivity and Tailscale status.`);
+          throw ApiError.serviceUnavailable(
+            'Connection to Ollama server timed out. Please check network connectivity and Tailscale status.',
+          );
         } else if (error.code === 'ECONNREFUSED') {
-          throw new InternalServerError(`Connection to Ollama server refused. Server may be down or unreachable.`);
+          throw ApiError.serviceUnavailable(
+            'Connection to Ollama server refused. Server may be down or unreachable.',
+          );
         } else {
-          throw new InternalServerError(`Ollama API error: ${(error.response?.data as any)?.error || error.message}`);
+          throw ApiError.internal(
+            `Ollama API error: ${(error.response?.data as any)?.error || error.message}`,
+          );
         }
       }
-      throw new InternalServerError(`Segmentation failed: ${error.message}`);
+      logger.error('Segmentation failed', error);
+      throw ApiError.internal(`Segmentation failed: ${error.message}`);
     }
 
     // Clean transcript lines and build final object
@@ -216,11 +271,16 @@ JSON:`;
           result[seg.end_time] = clean;
         }
       } catch (e) {
-        console.warn(`[segmentTranscript] Failed cleaning segment ${seg.end_time}:`, e);
+        logger.warn('Failed cleaning segment', {
+          endTime: seg.end_time,
+          error: e,
+        });
       }
     }
 
-    console.log(`[segmentTranscript] Done. Returning ${Object.keys(result).length} segments.`);
+    logger.info('Segmentation complete', {
+      segmentCount: Object.keys(result).length,
+    });
     return result;
   }
 
@@ -228,7 +288,7 @@ JSON:`;
   private createQuestionPrompt(
     questionType: string,
     count: number,
-    transcriptContent: string
+    transcriptContent: string,
   ): string {
     const base = `You are an AI question generator.
 Based on the transcript below, generate EXACTLY ${count} question(s) of type ${questionType}.
@@ -273,12 +333,11 @@ ${transcriptContent}
       SML: `Generate ${count} multiple-correct MCQ, 2-3 correct:true, timeLimitSeconds:90, points:8`,
       OTL: `Generate ${count} ordering question, with options in correct order, timeLimitSeconds:120, points:10`,
       NAT: `Generate ${count} numeric answer with value, timeLimitSeconds:90, points:6`,
-      DES: `Generate ${count} descriptive answer, detailed solution, timeLimitSeconds:300, points:15`
+      DES: `Generate ${count} descriptive answer, detailed solution, timeLimitSeconds:300, points:15`,
     };
 
     return base + (instructions[questionType] || '');
   }
-
 
   public async generateQuestions(args: {
     segments: Record<string | number, string>;
@@ -290,8 +349,14 @@ ${transcriptContent}
     if (!segments || Object.keys(segments).length === 0) {
       throw new HttpError(400, 'segments must be a non-empty object.');
     }
-    if (!globalQuestionSpecification?.length || !Object.keys(globalQuestionSpecification[0] || {}).length) {
-      throw new HttpError(400, 'globalQuestionSpecification must be a non-empty array with at least one spec.');
+    if (
+      !globalQuestionSpecification?.length ||
+      !Object.keys(globalQuestionSpecification[0] || {}).length
+    ) {
+      throw new HttpError(
+        400,
+        'globalQuestionSpecification must be a non-empty array with at least one spec.',
+      );
     }
 
     // // DEVELOPMENT MODE: Return dummy questions while Ollama is not set up
@@ -329,7 +394,7 @@ ${transcriptContent}
 
     const questionSpecs = globalQuestionSpecification[0];
     const allQuestions: GeneratedQuestion[] = [];
-    console.log(`[generateQuestions] Model: ${model}`);
+    logger.info('Generating questions', { model });
 
     for (const rawSegmentId in segments) {
       const segmentId = String(rawSegmentId); // normalize
@@ -340,27 +405,66 @@ ${transcriptContent}
         if (typeof count === 'number' && count > 0) {
           try {
             const schema = (questionSchemas as any)[type];
-            if (!schema) console.warn(`[generateQuestions] No schema for type ${type}.`);
+            if (!schema) {
+              logger.warn('No schema found for question type', { type });
+            }
 
-            const format = count === 1 ? schema : { type: 'array', items: schema, minItems: count, maxItems: count };
+            const format =
+              count === 1
+                ? schema
+                : { type: 'array', items: schema, minItems: count, maxItems: count };
             const prompt = this.createQuestionPrompt(type, count, transcript);
 
-            console.log(`[generateQuestions] Connecting to Ollama API at ${this.llmApiUrl} with model ${model} for ${type} questions`);
-            const config = this.getRequestConfig();
-            
-            const response = await axios.post(this.llmApiUrl, {
+            logger.info('Generating questions with Ollama', {
+              url: this.llmApiUrl,
               model,
-              prompt,
-              stream: false,
-              format: schema ? format : undefined,
-              options: { temperature: 0.2 }
-            }, config);
-            
-            console.log(`[generateQuestions] Successfully received response for ${type} questions`);
+              questionType: type,
+              count,
+              segmentId,
+            });
+
+            const config = this.getRequestConfig();
+
+            // Wrap Ollama API call with retry logic
+            const response = await retryIfRetryable(
+              () =>
+                axios.post(
+                  this.llmApiUrl,
+                  {
+                    model,
+                    prompt,
+                    stream: false,
+                    format: schema ? format : undefined,
+                    options: { temperature: 0.2 },
+                  },
+                  config,
+                ),
+              {
+                maxRetries: 3,
+                initialDelayMs: 2000,
+                maxDelayMs: 10000,
+                onRetry: (error, attempt) => {
+                  logger.warn('Retrying Ollama question generation', {
+                    attempt,
+                    error: error.message,
+                    model,
+                    questionType: type,
+                    segmentId,
+                  });
+                },
+              },
+            );
+
+            logger.info('Successfully received Ollama response', {
+              questionType: type,
+            });
 
             const text = response.data?.response;
             if (typeof text !== 'string') {
-              console.warn(`[generateQuestions] Unexpected response for type ${type}, segment ${segmentId}.`);
+              logger.warn('Unexpected response type from Ollama', {
+                questionType: type,
+                segmentId,
+              });
               continue;
             }
 
@@ -368,57 +472,56 @@ ${transcriptContent}
             const parsed = JSON.parse(cleaned);
             const questions = Array.isArray(parsed) ? parsed : [parsed];
 
-            questions.forEach(q => {
-              let questionText = q.question?.text || q.questionText || '';
-              let options = [];
-              // Extract options
-              if (q.solution?.incorrectLotItems) {
-                options = q.solution.incorrectLotItems.map((item: any) => ({
-                  text: item.text,
-                  correct: false,
-                  explanation: item.explaination || item.explanation || ''
-                }));
-              }
-              if (q.solution?.correctLotItem) {
-                options.push({
-                  text: q.solution.correctLotItem.text,
-                  correct: true,
-                  explanation: q.solution.correctLotItem.explaination || q.solution.correctLotItem.explanation || ''
-                });
-              }
+            // Process and normalize each question
+            questions.forEach((q) => {
+              const questionText = q.questionText || q.question?.text || '';
+              const options = q.options || [];
+              const solution = typeof q.solution === 'string' ? q.solution : '';
+
               allQuestions.push({
                 questionText,
                 options,
-                solution: '', // Optional: create from q.solution or leave empty
-                isParameterized: q.question?.isParameterized ?? false,
-                timeLimitSeconds: q.question?.timeLimitSeconds ?? 60,
-                points: q.question?.points ?? 5,
+                solution,
+                isParameterized: q.isParameterized ?? false,
+                timeLimitSeconds: q.timeLimitSeconds ?? 60,
+                points: q.points ?? 5,
                 segmentId,
-                questionType: type
+                questionType: type,
               });
             });
-            allQuestions.push(...questions);
-            console.log(`[generateQuestions] Generated ${questions.length} ${type} questions for segment ${segmentId}`);
-            console.log(`[generateQuestions] Raw LLM text for type ${type}, segment ${segmentId}:`, text.slice(0, 500));
+            logger.info('Generated questions for segment', {
+              count: questions.length,
+              questionType: type,
+              segmentId,
+              rawTextPreview: text.slice(0, 500),
+            });
           } catch (e: any) {
-            console.error(`[generateQuestions] Failed for type ${type}, segment ${segmentId}:`, e.message);
+            logger.error('Failed to generate questions', e, {
+              questionType: type,
+              segmentId,
+            });
             if (axios.isAxiosError(e)) {
-              console.error('[generateQuestions] Ollama API error details:', {
+              logger.error('Ollama API error details in generateQuestions', e, {
                 code: e.code,
-                // Access network error details safely
                 networkError: (e as any).cause,
-                config: e.config ? {
-                  url: e.config.url,
-                  method: e.config.method,
-                  timeout: e.config.timeout,
-                  hasProxy: !!(e.config.httpAgent || e.config.httpsAgent)
-                } : 'No config'
+                config: e.config
+                  ? {
+                      url: e.config.url,
+                      method: e.config.method,
+                      timeout: e.config.timeout,
+                      hasProxy: !!(e.config.httpAgent || e.config.httpsAgent),
+                    }
+                  : 'No config',
               });
-              
+
               if (e.code === 'ETIMEDOUT') {
-                console.error(`[generateQuestions] Connection to Ollama server timed out. Please check network connectivity and Tailscale status.`);
+                logger.error(
+                  'Connection to Ollama server timed out. Check network and Tailscale status.',
+                );
               } else if (e.code === 'ECONNREFUSED') {
-                console.error(`[generateQuestions] Connection to Ollama server refused. Server may be down or unreachable.`);
+                logger.error(
+                  'Connection to Ollama server refused. Server may be down or unreachable.',
+                );
               }
             }
           }
@@ -426,7 +529,9 @@ ${transcriptContent}
       }
     }
 
-    console.log(`[generateQuestions] Done. Total questions: ${allQuestions.length}`);
+    logger.info('Question generation complete', {
+      totalQuestions: allQuestions.length,
+    });
     return allQuestions;
   }
 }

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { Room } from '../../../shared/database/models/Room.js';
 import { pollSocket } from '../utils/PollSocket.js';
 import { UserModel } from '#root/shared/database/models/User.js';
+import { POLL_CONFIG } from '#root/shared/constants/pollConstants.js';
 
 interface InMemoryPoll {
   pollId: string;
@@ -23,12 +24,15 @@ export class PollService {
   private pollSocket = pollSocket;
   private activePolls = new Map<string, InMemoryPoll>(); // pollId -> InMemoryPoll
   private pollTimers = new Map<string, NodeJS.Timeout>(); // pollId -> timer
-  async createPoll(roomCode: string, data: {
-    question: string;
-    options: string[];
-    correctOptionIndex: number;
-    timer?: number;
-  }) {
+  async createPoll(
+    roomCode: string,
+    data: {
+      question: string;
+      options: string[];
+      correctOptionIndex: number;
+      timer?: number;
+    },
+  ) {
     const pollId = crypto.randomUUID();
 
     const poll = {
@@ -36,9 +40,9 @@ export class PollService {
       question: data.question,
       options: data.options,
       correctOptionIndex: data.correctOptionIndex,
-      timer: data.timer ?? 30,
+      timer: data.timer ?? POLL_CONFIG.DEFAULT_TIMER_SECONDS,
       createdAt: new Date(),
-      answers: []
+      answers: [],
     };
 
     const livepoll: InMemoryPoll = {
@@ -54,10 +58,7 @@ export class PollService {
       roomCode,
     };
 
-    await Room.updateOne(
-      { roomCode },
-      { $push: { polls: poll } }
-    );
+    await Room.updateOne({ roomCode }, { $push: { polls: poll } });
 
     this.activePolls.set(pollId, livepoll);
 
@@ -65,10 +66,7 @@ export class PollService {
     return poll;
   }
 
-
-
   async submitAnswer(roomCode: string, pollId: string, userId: string, answerIndex: number) {
-
     const poll = this.activePolls.get(pollId);
     if (!poll || poll.roomCode !== roomCode) {
       throw new Error('Poll not found or invalid room');
@@ -94,8 +92,8 @@ export class PollService {
     this.emitPollUpdate(roomCode, pollId);
 
     await Room.updateOne(
-      { roomCode, "polls._id": pollId },
-      { $push: { "polls.$.answers": { userId, answerIndex, answeredAt: new Date() } } }
+      { roomCode, 'polls._id': pollId },
+      { $push: { 'polls.$.answers': { userId, answerIndex, answeredAt: new Date() } } },
     );
   }
 
@@ -103,7 +101,32 @@ export class PollService {
     const room = await Room.findOne({ roomCode });
     if (!room) return null;
 
-    const results: Record<string, Record<string, { count: number; users: { id: string; name: string }[] }>> = {};
+    // OPTIMIZATION: Collect all user IDs first (prevent N+1 queries)
+    const allUserIds = new Set<string>();
+    for (const poll of room.polls) {
+      for (const ans of poll.answers) {
+        allUserIds.add(ans.userId);
+      }
+    }
+
+    // OPTIMIZATION: Batch fetch all users at once with selected fields only
+    const users = await UserModel.find(
+      { firebaseUID: { $in: Array.from(allUserIds) } },
+      { firebaseUID: 1, firstName: 1, lastName: 1 },
+    ).lean();
+
+    // Create user lookup map for O(1) access
+    const userMap = new Map(
+      users.map((user) => {
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
+        return [user.firebaseUID, { id: user.firebaseUID, name: fullName }];
+      }),
+    );
+
+    const results: Record<
+      string,
+      Record<string, { count: number; users: { id: string; name: string }[] }>
+    > = {};
 
     for (const poll of room.polls) {
       const counts = Array(poll.options.length).fill(0);
@@ -115,31 +138,27 @@ export class PollService {
           userIds[ans.answerIndex].push(ans.userId);
         }
       }
-      const allUserIds = [...new Set(poll.answers.map(ans => ans.userId))];
-      const users = await UserModel.find({ firebaseUID: { $in: allUserIds } }, { firebaseUID: 1, firstName: 1, lastName: 1 });
-      const userMap = new Map(users.map(user => {
-        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User';
-        return [user.firebaseUID, { id: user.firebaseUID, name: fullName }];
-      }));
 
-      const pollResult = poll.options.reduce((acc, opt, i) => {
-        const usersForOption = userIds[i].map(userId => {
-          const user = userMap.get(userId);
-          return user || { id: userId, name: 'Unknown User' };
-        });
-        acc[opt] = {
-          count: counts[i],
-          users: usersForOption
-        };
-        return acc;
-      }, {} as Record<string, { count: number; users: { id: string; name: string }[] }>);
+      const pollResult = poll.options.reduce(
+        (acc, opt, i) => {
+          const usersForOption = userIds[i].map((userId) => {
+            const user = userMap.get(userId);
+            return user || { id: userId, name: 'Unknown User' };
+          });
+          acc[opt] = {
+            count: counts[i],
+            users: usersForOption,
+          };
+          return acc;
+        },
+        {} as Record<string, { count: number; users: { id: string; name: string }[] }>,
+      );
 
       results[poll.question] = pollResult;
     }
 
     return results;
   }
-
 
   private emitPollUpdate(roomCode: string, pollId: string) {
     const poll = this.activePolls.get(pollId);
@@ -148,16 +167,15 @@ export class PollService {
     const pollData = this.getPollData(poll);
 
     // Emit to all clients in the room
-    // console.log(`[POLL Service]Emitting in-memory-poll-update for room ${roomCode}:`, pollData);
+
     this.pollSocket.emitToAll(roomCode, 'live-poll-results', pollData);
   }
 
   private getPollData(poll: InMemoryPoll) {
     // Calculate correct percentage
     const correctResponses = poll.responses[poll.correctOptionIndex] || 0;
-    const correctPercentage = poll.totalResponses > 0
-      ? Math.round((correctResponses / poll.totalResponses) * 100)
-      : 0;
+    const correctPercentage =
+      poll.totalResponses > 0 ? Math.round((correctResponses / poll.totalResponses) * 100) : 0;
 
     // Convert userResponses Map to plain object
     const userResponses = Object.fromEntries(poll.userResponses);
