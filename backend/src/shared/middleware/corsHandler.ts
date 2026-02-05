@@ -4,8 +4,10 @@ import {Request, Response, NextFunction} from 'express';
 // Configure CORS options
 const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, desktop apps, etc.)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (mobile apps, desktop apps, etc.) only in development
+    if (!origin && process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
 
     // Define allowed origins based on environment
     const allowedOrigins = [
@@ -15,13 +17,12 @@ const corsOptions: cors.CorsOptions = {
       'http://127.0.0.1:3000',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:4000',
-      'https://poll-question-gen-376e6.web.app',
     ];
 
-    // In production, add your production domain
+    // In production, only add verified production domains
     if (process.env.NODE_ENV === 'production') {
-      // Add your production frontend URL here
-      // allowedOrigins.push('https://yourdomain.com');
+      const productionOrigins = process.env.APP_ORIGINS?.split(',') || [];
+      allowedOrigins.push(...productionOrigins);
     }
 
     // Check if the origin is allowed
@@ -44,6 +45,7 @@ const corsOptions: cors.CorsOptions = {
     'Pragma',
   ],
   exposedHeaders: ['set-cookie'],
+  maxAge: 86400, // 24 hours
 };
 
 // Export the configured CORS middleware
@@ -54,7 +56,9 @@ export function createCorsHandler(additionalOrigins: string[] = []) {
   const customOptions = {
     ...corsOptions,
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
+      if (!origin && process.env.NODE_ENV === 'development') {
+        return callback(null, true);
+      }
 
       const allowedOrigins = [
         'http://localhost:3000',
@@ -63,12 +67,12 @@ export function createCorsHandler(additionalOrigins: string[] = []) {
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
         'http://127.0.0.1:4000',
-        'https://vibe-5b35a.web.app',
         ...additionalOrigins,
       ];
 
       if (process.env.NODE_ENV === 'production') {
-        // Add production origins here
+        const productionOrigins = process.env.APP_ORIGINS?.split(',') || [];
+        allowedOrigins.push(...productionOrigins);
       }
 
       if (allowedOrigins.includes(origin)) {

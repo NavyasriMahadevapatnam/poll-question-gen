@@ -11,6 +11,7 @@ import { createExpressServer, RoutingControllersOptions } from 'routing-controll
 import { appConfig } from './config/app.js';
 import { loggingHandler } from './shared/middleware/loggingHandler.js';
 import { authorizationChecker, HttpErrorHandler } from './shared/index.js';
+import { securityHeaders } from './shared/middleware/securityHeaders.js';
 import { generateOpenAPISpec } from './shared/functions/generateOpenApiSpec.js';
 import { apiReference } from '@scalar/express-api-reference';
 import { loadAppModules } from './bootstrap/loadModules.js';
@@ -46,7 +47,7 @@ const moduleOptions: RoutingControllersOptions = {
 //const app = express();
 const app = createExpressServer({
   ...moduleOptions,
-  middlewares: [loggingHandler, HttpErrorHandler], // Add your middleware here
+  middlewares: [securityHeaders, loggingHandler, HttpErrorHandler], // Add security headers first
 });
 //app.use(loggingHandler);
 //const routingControllersApp = createExpressServer(moduleOptions);
@@ -101,14 +102,19 @@ app.use(function onError(err, req, res, next) {
   let eventId;
   try {
     eventId = Sentry.captureException(err);
-    console.log(`Error captured in final handler with Sentry ID: ${eventId}`);
+    if (NODE_ENV === 'development') {
+      console.log(`Error captured in final handler with Sentry ID: ${eventId}`);
+    }
   } catch (sentryError) {
     console.error('Failed to capture error with Sentry:', sentryError);
   }
   
-  res.status(500).json({
-    error: err.message,
-    sentryEventId: eventId || 'unknown',
+  const statusCode = err.status || err.statusCode || 500;
+  const message = NODE_ENV === 'production' ? 'An internal server error occurred' : err.message;
+  
+  res.status(statusCode).json({
+    error: message,
+    ...(NODE_ENV === 'development' && { sentryEventId: eventId || 'unknown' }),
     timestamp: new Date().toISOString()
   });
 });

@@ -217,28 +217,29 @@ export class HttpErrorHandler implements ExpressErrorMiddlewareInterface {
         success: false,
         error: error.message,
         ...(error.context && { details: error.context }),
-        sentryEventId: eventId,
+        ...(process.env.NODE_ENV === 'development' && { sentryEventId: eventId }),
       });
     } else if (error instanceof UnauthorizedError) {
       response
         .status(401)
         .json(
-          new ErrorResponse<null>('You are not authorized to access this resource.', null, eventId),
+          new ErrorResponse<null>('You are not authorized to access this resource.', null, process.env.NODE_ENV === 'development' ? eventId : undefined),
         );
     } else if (error instanceof HttpError) {
       if ('errors' in error && (error.errors as any)[0] instanceof ValidationError) {
         response
           .status(400)
-          .json(new ErrorResponse<typeof error.errors>(error.message, error.errors, eventId));
+          .json(new ErrorResponse<typeof error.errors>(error.message, error.errors, process.env.NODE_ENV === 'development' ? eventId : undefined));
       } else {
-        response.status(error.httpCode).json(new ErrorResponse<null>(error.message, null, eventId));
+        response.status(error.httpCode).json(new ErrorResponse<null>(error.message, null, process.env.NODE_ENV === 'development' ? eventId : undefined));
       }
     } else if (error instanceof Error) {
-      response.status(500).json(new ErrorResponse<null>(error.message, null, eventId));
+      const message = process.env.NODE_ENV === 'production' ? 'An internal server error occurred.' : error.message;
+      response.status(500).json(new ErrorResponse<null>(message, null, process.env.NODE_ENV === 'development' ? eventId : undefined));
     } else {
       response
         .status(500)
-        .json(new ErrorResponse<null>('An unexpected error occurred.', null, eventId));
+        .json(new ErrorResponse<null>('An unexpected error occurred.', null, process.env.NODE_ENV === 'development' ? eventId : undefined));
     }
   }
 }

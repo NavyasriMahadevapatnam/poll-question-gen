@@ -60,24 +60,24 @@ export class AuthController {
   @Authorized()
   @Patch('/change-password')
   async changePassword(@Body() body: ChangePasswordBody, @Req() request: AuthenticatedRequest) {
-    logger.info('Password change attempt', { userId: request.user._id });
+    logger.info('Password change attempt', { userId: request.user._id.toString() });
     try {
       const result = await this.authService.changePassword(body, request.user);
-      logger.info('Password changed successfully', { userId: request.user._id });
+      logger.info('Password changed successfully', { userId: request.user._id.toString() });
       return { success: true, message: result.message };
     } catch (error) {
       if (error instanceof ChangePasswordError) {
-        logger.warn('Password change failed', undefined, {
-          userId: request.user._id,
+        logger.warn('Password change failed', {
+          userId: request.user._id.toString(),
           reason: error.message,
         });
         throw ApiError.badRequest(error.message);
       }
       if (error instanceof Error) {
-        logger.error('Password change error', error, { userId: request.user._id });
+        logger.error('Password change error', error, { userId: request.user._id.toString() });
         throw ApiError.internal(error.message);
       }
-      logger.error('Unknown password change error', undefined, { userId: request.user._id });
+      logger.error('Unknown password change error', new Error('Unknown error'), { userId: request.user._id.toString() });
       throw ApiError.internal('Internal server error');
     }
   }
@@ -94,7 +94,13 @@ export class AuthController {
     };
   }
 
+  @OpenAPI({
+    summary: 'Login user',
+    description:
+      'Authenticates a user with email and password using Firebase Authentication. Returns an ID token and refresh token upon successful authentication.',
+  })
   @Post('/login')
+  @UseBefore(AuthRateLimiter)
   async login(@Body() body: LoginBody) {
     const { email, password } = body;
     logger.info('User login attempt', { email });
@@ -111,10 +117,10 @@ export class AuthController {
       },
     );
 
-    const result = await data.json();
+    const result = await data.json() as { error?: { message: string }; idToken?: string; refreshToken?: string };
 
     if (result.error) {
-      logger.warn('Login failed', undefined, { email, error: result.error.message });
+      logger.warn('Login failed', { email, error: result.error.message });
       throw ApiError.unauthorized(result.error.message);
     }
 

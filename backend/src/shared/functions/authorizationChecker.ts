@@ -1,24 +1,31 @@
-import { FirebaseAuthService } from "#root/modules/auth/services/FirebaseAuthService.js";
-import { getFromContainer } from "routing-controllers";
+import { FirebaseAuthService } from '#root/modules/auth/services/FirebaseAuthService.js';
+import { getFromContainer, Action } from 'routing-controllers';
+import { logger } from '#root/shared/utils/logger.js';
 
-export async function authorizationChecker(action, roles: string[]): Promise<boolean> {
-    const firebaseAuthService = getFromContainer(FirebaseAuthService);
-    const token = action.request.headers.authorization?.split(' ')[1];
-    console.log('Authorization token:', token);
-    if (!token) {
-        return false; // No token provided
-    }
-    try {
-        const user = await firebaseAuthService.getCurrentUserFromToken(token);
+export async function authorizationChecker(action: Action, roles: string[]): Promise<boolean> {
+  const firebaseAuthService = getFromContainer(FirebaseAuthService);
+  const token = action.request.headers.authorization?.split(' ')[1];
 
-        // If no specific roles are required, just allow
-        if (roles.length === 0) return true;
-        // Check if user's role matches one of the required roles
-        return roles.includes(user.role);
+  if (!token) {
+    logger.warn('Authorization failed: No token provided');
+    return false; // No token provided
+  }
+  try {
+    const user = await firebaseAuthService.getCurrentUserFromToken(token);
+
+    if (roles.length === 0) return true;
+
+    const authorized = roles.includes(user.role);
+    if (!authorized) {
+      logger.warn('Authorization failed: Insufficient permissions', {
+        userId: user._id.toString(),
+        requiredRoles: roles,
+        userRole: user.role,
+      });
     }
-    catch (error) {
-        console.log('Authorization error:', error);
-        return false; // Invalid token or user not found
-    }
-    return true; // Authorization successful
+    return authorized;
+  } catch (error) {
+    logger.error('Authorization error', error instanceof Error ? error : new Error(String(error)));
+    return false; // Invalid token or user not found
+  }
 }
