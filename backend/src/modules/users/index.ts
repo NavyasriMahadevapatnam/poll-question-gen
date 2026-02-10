@@ -1,12 +1,11 @@
-import {authContainerModule} from '#auth/container.js';
-import {sharedContainerModule} from '#root/container.js';
-import {InversifyAdapter} from '#root/inversify-adapter.js';
-import {Container, ContainerModule} from 'inversify';
-import {RoutingControllersOptions, useContainer} from 'routing-controllers';
-import {usersContainerModule} from './container.js';
-import {UserController} from './controllers/UserController.js';
+import { authContainerModule } from '#auth/container.js';
+import { sharedContainerModule } from '#root/container.js';
+import { InversifyAdapter } from '#root/inversify-adapter.js';
+import { Container, ContainerModule } from 'inversify';
+import { RoutingControllersOptions, useContainer } from 'routing-controllers';
+import { usersContainerModule } from './container.js';
+import { UserController } from './presentation/controllers/UserController.js';
 import { USER_VALIDATORS } from './classes/validators/index.js';
-
 
 export const usersContainerModules: ContainerModule[] = [
   usersContainerModule,
@@ -14,9 +13,7 @@ export const usersContainerModules: ContainerModule[] = [
   authContainerModule,
 ];
 
-export const usersModuleControllers: Function[] = [
-  UserController,
-];
+export const usersModuleControllers: Function[] = [UserController];
 
 export async function setupUsersContainer(): Promise<void> {
   const container = new Container();
@@ -35,6 +32,4 @@ export const usersModuleOptions: RoutingControllersOptions = {
   validation: true,
 };
 
-export const usersModuleValidators: Function[] = [
-  ...USER_VALIDATORS
-]
+export const usersModuleValidators: Function[] = [...USER_VALIDATORS];

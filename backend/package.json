@@ -17,6 +17,8 @@
   },
   "imports": {
     "#root/*.js": "./build/*.js",
+    "#core/*.js": "./build/core/*.js",
+    "#infrastructure/*.js": "./build/infrastructure/*.js",
     "#shared/*.js": "./build/shared/*.js",
     "#auth/*.js": "./build/modules/auth/*.js",
     "#genai/*.js": "./build/modules/genai/*.js",

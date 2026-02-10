@@ -1,6 +1,6 @@
 import { ContainerModule } from 'inversify';
 import { MongoDatabase } from '#infrastructure/database/mongodb/MongoDatabase.js';
-import { UserRepository } from '#shared/database/providers/mongo/repositories/UserRepository.js';
+import { UserRepository } from '#users/infrastructure/persistence/UserRepository.js';
 import { HttpErrorHandler } from '#shared/middleware/errorHandler.js';
 import { GLOBAL_TYPES } from './types.js';
 import { dbConfig } from './config/db.js';
