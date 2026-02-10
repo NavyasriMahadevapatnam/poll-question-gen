@@ -36,7 +36,7 @@ import {
 import { validate } from 'class-validator';
 import { AiRateLimiter, UserAiRateLimiter } from '#root/shared/middleware/rateLimiter.js';
 import { logger } from '#root/shared/utils/logger.js';
-import { ApiError } from '#root/shared/classes/ApiError.js';
+import { ApiError } from '#core/errors/ApiError.js';
 import { SEGMENTATION } from '#root/shared/constants/pollConstants.js';
 
 dotenv.config();

@@ -1,12 +1,12 @@
 import { injectable, inject } from 'inversify';
 import { NotFoundError } from 'routing-controllers';
-import { BaseService } from '#root/shared/classes/BaseService.js';
+import { BaseService } from '#core/base/BaseService.js';
 import { IUserRepository } from '#root/shared/database/interfaces/IUserRepository.js';
-import { MongoDatabase } from '#root/shared/database/providers/mongo/MongoDatabase.js';
+import { MongoDatabase } from '#infrastructure/database/mongodb/MongoDatabase.js';
 import { GLOBAL_TYPES } from '#root/types.js';
 import type { IUser } from '#shared/interfaces/models.js';
 import { logger } from '#root/shared/utils/logger.js';
-import { ApiError } from '#root/shared/classes/ApiError.js';
+import { ApiError } from '#core/errors/ApiError.js';
 
 @injectable()
 export class UserService extends BaseService {

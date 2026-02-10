@@ -1,13 +1,13 @@
-import {SignUpBody, User, ChangePasswordBody} from '#auth/classes/index.js';
-import {IAuthService} from '#auth/interfaces/IAuthService.js';
-import {GLOBAL_TYPES} from '#root/types.js';
-import {injectable, inject} from 'inversify';
-import {InternalServerError} from 'routing-controllers';
+import { SignUpBody, User, ChangePasswordBody } from '#auth/classes/index.js';
+import { IAuthService } from '#auth/interfaces/IAuthService.js';
+import { GLOBAL_TYPES } from '#root/types.js';
+import { injectable, inject } from 'inversify';
+import { InternalServerError } from 'routing-controllers';
 import admin from 'firebase-admin';
-import {IUser} from '#root/shared/interfaces/models.js';
-import {BaseService} from '#root/shared/classes/BaseService.js';
-import {IUserRepository} from '#root/shared/database/interfaces/IUserRepository.js';
-import {MongoDatabase} from '#root/shared/database/providers/mongo/MongoDatabase.js';
+import { IUser } from '#root/shared/interfaces/models.js';
+import { BaseService } from '#core/base/BaseService.js';
+import { IUserRepository } from '#root/shared/database/interfaces/IUserRepository.js';
+import { MongoDatabase } from '#infrastructure/database/mongodb/MongoDatabase.js';
 import { appConfig } from '#root/config/app.js';
 
 /**
@@ -40,13 +40,11 @@ export class FirebaseAuthService extends BaseService implements IAuthService {
     if (!admin.apps.length) {
       if (appConfig.isDevelopment) {
         admin.initializeApp({
-          credential: admin.credential.cert(
-            {
-              clientEmail: appConfig.firebase.clientEmail,
-              privateKey: appConfig.firebase.privateKey.replace(/\\n/g, '\n'),
-              projectId: appConfig.firebase.projectId,
-            }
-          ),
+          credential: admin.credential.cert({
+            clientEmail: appConfig.firebase.clientEmail,
+            privateKey: appConfig.firebase.privateKey.replace(/\\n/g, '\n'),
+            projectId: appConfig.firebase.projectId,
+          }),
         });
       } else {
         admin.initializeApp({
@@ -110,9 +108,7 @@ export class FirebaseAuthService extends BaseService implements IAuthService {
         disabled: false,
       });
     } catch (error) {
-      throw new InternalServerError(
-        `Failed to create user in Firebase: ${error.message}`,
-      );
+      throw new InternalServerError(`Failed to create user in Firebase: ${error.message}`);
     }
 
     // Prepare user object for storage in our database
@@ -126,7 +122,7 @@ export class FirebaseAuthService extends BaseService implements IAuthService {
 
     let createdUserId: string;
 
-    await this._withTransaction(async session => {
+    await this._withTransaction(async (session) => {
       const newUser = new User(user);
       createdUserId = await this.userRepository.create(newUser, session);
       if (!createdUserId) {
@@ -138,7 +134,7 @@ export class FirebaseAuthService extends BaseService implements IAuthService {
   async changePassword(
     body: ChangePasswordBody,
     requestUser: IUser,
-  ): Promise<{success: boolean; message: string}> {
+  ): Promise<{ success: boolean; message: string }> {
     // Verify user exists in Firebase
     const firebaseUser = await this.auth.getUser(requestUser.firebaseUID);
     if (!firebaseUser) {
@@ -155,6 +151,6 @@ export class FirebaseAuthService extends BaseService implements IAuthService {
       password: body.newPassword,
     });
 
-    return {success: true, message: 'Password updated successfully'};
+    return { success: true, message: 'Password updated successfully' };
   }
 }

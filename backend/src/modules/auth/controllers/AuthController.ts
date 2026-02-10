@@ -22,7 +22,7 @@ import { AUTH_TYPES } from '#auth/types.js';
 import { OpenAPI } from 'routing-controllers-openapi';
 import { appConfig } from '#root/config/app.js';
 import { logger } from '#root/shared/utils/logger.js';
-import { ApiError } from '#root/shared/classes/ApiError.js';
+import { ApiError } from '#core/errors/ApiError.js';
 
 @OpenAPI({
   tags: ['Authentication'],
@@ -77,7 +77,9 @@ export class AuthController {
         logger.error('Password change error', error, { userId: request.user._id.toString() });
         throw ApiError.internal(error.message);
       }
-      logger.error('Unknown password change error', new Error('Unknown error'), { userId: request.user._id.toString() });
+      logger.error('Unknown password change error', new Error('Unknown error'), {
+        userId: request.user._id.toString(),
+      });
       throw ApiError.internal('Internal server error');
     }
   }
@@ -117,7 +119,11 @@ export class AuthController {
       },
     );
 
-    const result = await data.json() as { error?: { message: string }; idToken?: string; refreshToken?: string };
+    const result = (await data.json()) as {
+      error?: { message: string };
+      idToken?: string;
+      refreshToken?: string;
+    };
 
     if (result.error) {
       logger.warn('Login failed', { email, error: result.error.message });

@@ -7,7 +7,7 @@ import { injectable } from 'inversify';
 import { InternalServerError } from 'routing-controllers';
 import { fileURLToPath } from 'url';
 import { logger } from '#root/shared/utils/logger.js';
-import { ApiError } from '#root/shared/classes/ApiError.js';
+import { ApiError } from '#core/errors/ApiError.js';
 
 const execAsync = util.promisify(exec);
 const __filename = fileURLToPath(import.meta.url);

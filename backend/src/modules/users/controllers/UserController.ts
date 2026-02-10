@@ -24,7 +24,7 @@ import {
 } from '../classes/validators/UserValidators.js';
 import { UserModel } from '#root/shared/database/models/User.js';
 import { logger } from '#root/shared/utils/logger.js';
-import { ApiError } from '#root/shared/classes/ApiError.js';
+import { ApiError } from '#core/errors/ApiError.js';
 
 @OpenAPI({ tags: ['Users'] })
 @JsonController('/users', { transformResponse: true })

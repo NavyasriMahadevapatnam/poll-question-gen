@@ -14,12 +14,14 @@
     "allowArbitraryExtensions": false,
     "incremental": true,
     "paths": {
-      "#root/*": ["./*"],
-      "#shared/*": ["./shared/*"],
-      "#auth/*": ["./modules/auth/*"],
-      "#genai/*": ["./modules/genai/*"],
-      "#users/*": ["./modules/users/*"],
-      "#livequizzes/*": ["./modules/livequizzes/*"]
+      "#root/*": ["./src/*"],
+      "#core/*": ["./src/core/*"],
+      "#infrastructure/*": ["./src/infrastructure/*"],
+      "#shared/*": ["./src/shared/*"],
+      "#auth/*": ["./src/modules/auth/*"],
+      "#genai/*": ["./src/modules/genai/*"],
+      "#users/*": ["./src/modules/users/*"],
+      "#livequizzes/*": ["./src/modules/livequizzes/*"]
     },
     "types": ["node", "express", "routing-controllers", "routing-controllers-openapi"],
     "experimentalDecorators": true,
