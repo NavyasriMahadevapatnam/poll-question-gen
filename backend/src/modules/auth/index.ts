@@ -1,15 +1,15 @@
-import {sharedContainerModule} from '#root/container.js';
-import {InversifyAdapter} from '#root/inversify-adapter.js';
-import {Container, ContainerModule} from 'inversify';
+import { sharedContainerModule } from '#root/container.js';
+import { InversifyAdapter } from '#root/inversify-adapter.js';
+import { Container, ContainerModule } from 'inversify';
 import {
   RoutingControllersOptions,
   Action,
   useContainer,
   getFromContainer,
 } from 'routing-controllers';
-import {authContainerModule} from './container.js';
-import {AuthController} from './controllers/AuthController.js';
-import {FirebaseAuthService} from './services/FirebaseAuthService.js';
+import { authContainerModule } from './container.js';
+import { AuthController } from './presentation/controllers/AuthController.js';
+import { AuthService } from './application/services/AuthService.js';
 import { AUTH_VALIDATORS, SignUpBody, SignUpResponse } from './classes/index.js';
 import { usersContainerModule } from '../users/container.js';
 
@@ -32,15 +32,15 @@ export const authModuleOptions: RoutingControllersOptions = {
   controllers: authModuleControllers,
   authorizationChecker: async function (action: Action, roles: string[]) {
     // Use the auth service to check if the user is authorized
-    const authService =
-      getFromContainer<FirebaseAuthService>(FirebaseAuthService);
+    const authService = getFromContainer<AuthService>(AuthService);
     const token = action.request.headers['authorization']?.split(' ')[1];
     if (!token) {
       return false;
     }
 
     try {
-      return await authService.verifyToken(token);
+      const decoded = await authService.verifyToken(token);
+      return !!decoded;
       // const user = await authService.getUserFromToken(token);
       // action.request.user = user;
 
@@ -54,14 +54,14 @@ export const authModuleOptions: RoutingControllersOptions = {
   },
   currentUserChecker: async (action: Action) => {
     // Use the auth service to get the current user
-    const authService =
-      getFromContainer<FirebaseAuthService>(FirebaseAuthService);
+    const authService = getFromContainer<AuthService>(AuthService);
     const token = action.request.headers['authorization']?.split(' ')[1];
     if (!token) {
       return null;
     }
     try {
-      return await authService.verifyToken(token);
+      const user = await authService.getCurrentUserFromToken(token);
+      return user;
     } catch (error) {
       return null;
     }
@@ -69,9 +69,7 @@ export const authModuleOptions: RoutingControllersOptions = {
   validation: true,
 };
 
-export const authModuleValidators: Function[] = [
-...AUTH_VALIDATORS
-];
+export const authModuleValidators: Function[] = [...AUTH_VALIDATORS];
 
 // export * from './classes/index.js';
 // export * from './controllers/index.js';
