@@ -35,6 +35,7 @@ import MyPolls from '@/pages/student/MyPolls'
 import RoleSelectionPage from '@/pages/roleselect'
 import CohostInvite from '@/pages/teacher/CohostInvite'
 import Badges from '@/pages/student/Badges'
+import StudentSessions from '@/pages/student/StudentSessions'
 
 // Root route with error and notFound handling
 const rootRoute = createRootRoute({
@@ -121,7 +122,7 @@ const teacherLayoutRoute = createRoute({
         throw redirect({ to: '/auth' }); // Redirect others to auth
       }
     }
-    
+
     if (location.pathname === '/teacher' || location.pathname === '/teacher/') {
       throw redirect({ to: '/teacher/home' });
     }
@@ -149,7 +150,7 @@ const studentLayoutRoute = createRoute({
         throw redirect({ to: '/auth' }); // Redirect others to auth
       }
     }
-    
+
     if (location.pathname === '/student' || location.pathname === '/student/') {
       throw redirect({ to: '/student/home' });
     }
@@ -159,12 +160,12 @@ const studentLayoutRoute = createRoute({
 
 // Role Select Page
 const roleSelectRoute = createRoute({
-  getParentRoute: () => rootRoute, 
+  getParentRoute: () => rootRoute,
   path: '/select-role',
   beforeLoad: () => {
     const { isAuthenticated, user } = useAuthStore.getState();
     if (!isAuthenticated) throw redirect({ to: '/auth' });
-    
+
     // If user already has a role, redirect to appropriate dashboard
     if (user?.role === 'teacher') {
       throw redirect({ to: '/teacher/home' });
@@ -202,7 +203,7 @@ const teacherManageRoomsRoute = createRoute({
   getParentRoute: () => teacherLayoutRoute,
   path: '/manage-rooms',
   component: ManageRoom,
-}); 
+});
 
 // Teacher cohosted rooms route
 const teacherCohostedRoomsRoute = createRoute({
@@ -328,6 +329,13 @@ const studentSettingsRoute = createRoute({
   component: StudentSettings,
 });
 
+// Student sessions route
+const studentSessionsRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: '/sessions',
+  component: StudentSessions,
+});
+
 // Create a catch-all not found route
 const notFoundRoute = new NotFoundRoute({
   getParentRoute: () => rootRoute,
@@ -360,6 +368,7 @@ const routeTree = rootRoute.addChildren([
     studentPollAnalysisRoute,
     studentMyPollRoute,
     studentBadgesRoute,
+    studentSessionsRoute,
   ]),
 ]);
 

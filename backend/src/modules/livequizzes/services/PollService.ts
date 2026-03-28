@@ -148,6 +148,9 @@ export class PollService {
         badges: newlyUnlockedBadges,
       });
     }
+
+    // Emit a dashboard update to the user
+    pollSocket.emitToUser(userId, 'dashboard-update', { type: 'poll_answered', roomCode });
   }
 
   async getPollResults(roomCode: string) {
@@ -228,24 +231,24 @@ export class PollService {
     };
   }
 
- async getUserAchievements(userId: string) {
-  const [achievedBadgesRaw, allBadges] = await Promise.all([
-    UserAchievement.find({ userId })
-      .populate("badgeId")
-      .lean(),
-    Badge.find().lean()
-  ]);
+  async getUserAchievements(userId: string) {
+    const [achievedBadgesRaw, allBadges] = await Promise.all([
+      UserAchievement.find({ userId })
+        .populate("badgeId")
+        .lean(),
+      Badge.find().lean()
+    ]);
 
-  const achievedBadges = achievedBadgesRaw.filter((a: any) => a?.badgeId?._id);
-  const achievedBadgeIds = new Set(
-    achievedBadges.map((a: any) => a.badgeId._id.toString())
-  );
+    const achievedBadges = achievedBadgesRaw.filter((a: any) => a?.badgeId?._id);
+    const achievedBadgeIds = new Set(
+      achievedBadges.map((a: any) => a.badgeId._id.toString())
+    );
 
-  const unachievedBadges = allBadges.filter(
-    badge => !achievedBadgeIds.has(badge._id.toString())
-  );
+    const unachievedBadges = allBadges.filter(
+      badge => !achievedBadgeIds.has(badge._id.toString())
+    );
 
-  return { achievedBadges, unachievedBadges };
-}
+    return { achievedBadges, unachievedBadges };
+  }
 
 }

@@ -6,6 +6,7 @@ import { BookOpen, TrendingUp, Calendar, Trophy, Clock, CheckCircle, BarChart2, 
 import { useAuthStore } from "@/lib/store/auth-store";
 import { useNavigate } from "@tanstack/react-router";
 import api from "@/lib/api/api";
+import socket from "@/lib/api/socket";
 
 export interface StudentData {
   pollStats: {
@@ -14,6 +15,9 @@ export interface StudentData {
     absent: number;
     unattempted: number;
     earnedPoints: number;
+    correctAnswers: number;
+    incorrectAnswers: number;
+    avgResponseTime: string;
   };
   pollResults: {
     name: string;
@@ -22,11 +26,9 @@ export interface StudentData {
     date: string;
     maxPoints: number;
     points: number;
-  }[];
-  pollDetails: {
-    title: string;
-    type: string;
-    timer: string;
+    isCorrect: boolean;
+    timer?: number;
+    type?: string;
   }[];
   activePolls: {
     name: string;
@@ -44,7 +46,13 @@ export interface StudentData {
   performanceSummary: {
     avgScore: string;
     participationRate: string;
+    avgResponseTime: string;
     bestSubject: string;
+  };
+  achievements: {
+    totalEarned: number;
+    recentAchievements: any[];
+    upcomingBadge: any;
   };
   roomWiseScores: {
     roomName: string;
@@ -56,6 +64,8 @@ export interface StudentData {
     maxPossiblePoints: number;
     avgScore: number;
     averageScore: string;
+    avgResponseTime: string;
+    badgesCount: number;
     status: string;
     createdAt: Date;
   }[];
@@ -69,7 +79,7 @@ export default function StudentDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [localActiveRoom, setLocalActiveRoom] = useState<string | null>(null);
   const navigate = useNavigate();
-  const [achievementProgress, setAchievementProgress] = useState({ earned: 0, total: 0, percent: 0 });
+
 
   useEffect(() => {
     const activeRoomCode = localStorage.getItem("activeRoomCode");
@@ -99,25 +109,9 @@ export default function StudentDashboard() {
     }
   };
 
-  const fetchAchievementProgress = async () => {
-    if (!user?.uid) return;
-
-    try {
-      const res = await api.get(`/students/dashboard/achievement/${user.uid}/progress`);
-      setAchievementProgress({
-        earned: res.data?.earned || 0,
-        total: res.data?.total || 0,
-        percent: res.data?.percent || 0,
-      });
-    } catch (e) {
-      console.error("Failed to load achievement progress:", e);
-    }
-  };
-
   useEffect(() => {
     if (user?.uid) {
       fetchDashboardData();
-      fetchAchievementProgress();
     }
   }, [user?.uid]);
 
@@ -152,6 +146,41 @@ export default function StudentDashboard() {
 
     window.addEventListener('focus', handleWindowFocus);
     return () => window.removeEventListener('focus', handleWindowFocus);
+  }, [user?.uid]);
+
+  // Sync active room from backend if local storage is empty (e.g., incognito/new device)
+  useEffect(() => {
+    if (!localActiveRoom && dashboardData?.roomWiseScores) {
+      const activeRooms = dashboardData.roomWiseScores
+        .filter(r => r.status === 'active')
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      if (activeRooms.length > 0) {
+        setLocalActiveRoom(activeRooms[0].roomCode);
+        // Also persist it for this session's local storage to prevent flickering
+        localStorage.setItem("activeRoomCode", activeRooms[0].roomCode);
+        localStorage.setItem("joinedRoom", "true");
+      }
+    }
+  }, [dashboardData, localActiveRoom]);
+
+  // Real-time Dashboard Updates
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    // Join personal room for targeted real-time events
+    socket.emit('join-user-room', user.uid);
+
+    const handleDashboardUpdate = (data: any) => {
+      console.log('Real-time dashboard update received:', data);
+      fetchDashboardData();
+    };
+
+    socket.on('dashboard-update', handleDashboardUpdate);
+
+    return () => {
+      socket.off('dashboard-update', handleDashboardUpdate);
+    };
   }, [user?.uid]);
 
   // Loading state
@@ -211,11 +240,11 @@ export default function StudentDashboard() {
   const {
     pollStats,
     pollResults,
-    pollDetails,
     //activePolls,
     upcomingPolls,
     scoreProgression,
     performanceSummary,
+    achievements,
     roomWiseScores
   } = dashboardData;
 
@@ -326,57 +355,7 @@ export default function StudentDashboard() {
         {/* Middle Row: Recent Polls + Active Rooms + Upcoming Polls */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
 
-          {/* Recent Polls (combined box) */}
-          <Card className="md:col-span-2 shadow-md dark:shadow-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" data-tour="active-polls">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-blue-700 dark:text-blue-400 flex items-center gap-2 text-sm sm:text-base">
-                <Trophy className="h-5 w-5" />
-                Recent Polls
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {pollResults && pollResults.length > 0 ? (
-                [...pollResults]
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .slice(0, 4)
-                  .map((poll, idx) => (
-                    <div
-                      key={`${poll.name}-${idx}`}
-                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-xl bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-700 hover:shadow-md transition-all group"
-                    >
-                      <div className="flex items-center gap-3 mb-3 sm:mb-0">
-                        <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-500 shrink-0 group-hover:scale-110 transition-transform">
-                          <CheckCircle className="w-5 h-5" />
-                        </div>
-                        <div className="flex flex-col">
-                          <div className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base">{poll.name}</div>
-                          <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                            {new Date(poll.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 sm:gap-4 pl-12 sm:pl-0">
-                        <div className="flex items-center px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                          <span className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">{poll.points}</span>
-                          <span className="mx-1 text-slate-400">/</span>
-                          <span className="text-xs sm:text-sm font-medium text-slate-500">{poll.maxPoints}</span>
-                        </div>
 
-                        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs sm:text-sm font-medium bg-slate-50 dark:bg-slate-900/50 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                          <Clock className="w-4 h-4 text-slate-400" />
-                          {pollDetails[idx]?.timer || "N/A"}s
-                        </div>
-                      </div>
-                    </div>
-                  ))
-              ) : (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <Trophy className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No recent polls</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
           {/* Active Rooms */}
           <Card className="shadow-md dark:shadow-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
@@ -486,229 +465,369 @@ export default function StudentDashboard() {
           </Card>
         </div>
 
-        {/* Score Progression and Room-wise Results */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          {/* Score Progression */}
-          <Card className="shadow-md dark:shadow-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+        {/* Performance Summary Banner */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-tour="performance-summary">
+          <Card className="bg-white dark:bg-slate-800 border-0 shadow-sm overflow-hidden group">
+            <div className="h-1 bg-blue-500 w-full" />
+            <CardContent className="p-5 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 transition-transform group-hover:scale-110">
+                <Target className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Accuracy</p>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">{performanceSummary?.avgScore || '0%'}</h3>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white dark:bg-slate-800 border-0 shadow-sm overflow-hidden group">
+            <div className="h-1 bg-indigo-500 w-full" />
+            <CardContent className="p-5 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 transition-transform group-hover:scale-110">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Avg Response</p>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">{performanceSummary?.avgResponseTime || '0'}s</h3>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white dark:bg-slate-800 border-0 shadow-sm overflow-hidden group">
+            <div className="h-1 bg-emerald-500 w-full" />
+            <CardContent className="p-5 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 transition-transform group-hover:scale-110">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Poll Participation</p>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">{performanceSummary?.participationRate || '0%'}</h3>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white dark:bg-slate-800 border-0 shadow-sm overflow-hidden group">
+            <div className="h-1 bg-amber-500 w-full" />
+            <CardContent className="p-5 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 transition-transform group-hover:scale-110">
+                <Award className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Badges Earned</p>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">{achievements?.totalEarned || 0}</h3>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Achievement Showcase & Question Interaction */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Achievement Showcase */}
+          <Card className="lg:col-span-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl border-slate-200 dark:border-slate-700 shadow-xl">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-slate-800 dark:text-slate-100 font-bold flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-indigo-500" />
+                Achievement Showcase
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/student/badges' })} className="text-blue-600 font-semibold hover:bg-blue-50">
+                View All <ArrowRightCircle className="ml-1 w-4 h-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Recent Achievements */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Recently Earned</h4>
+                  <div className="space-y-3">
+                    {achievements?.recentAchievements && achievements.recentAchievements.length > 0 ? (
+                      achievements.recentAchievements.slice(0, 3).map((ach: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 group hover:border-indigo-200 transition-all">
+                          <div className="text-2xl">{ach.badgeId?.icon || "🏆"}</div>
+                          <div>
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{ach.badgeId?.name}</div>
+                            <div className="text-[10px] text-slate-500 font-medium">Earned in Room {ach.roomCode}</div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-6 bg-slate-50 dark:bg-slate-900/20 rounded-xl border border-dashed border-slate-200">
+                        <p className="text-xs text-slate-400">Keep participating to earn badges!</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Upcoming Badge */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Next Milestone</h4>
+                  {achievements?.upcomingBadge ? (
+                    <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 border border-indigo-100 dark:border-indigo-800/50 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-125 transition-transform duration-500">
+                        <Award className="w-16 h-16 text-indigo-600" />
+                      </div>
+                      <div className="relative z-10">
+                        <div className="text-3xl mb-3">{achievements.upcomingBadge.icon || "✨"}</div>
+                        <h5 className="font-extrabold text-slate-800 dark:text-indigo-100 text-lg">{achievements.upcomingBadge.name}</h5>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4 line-clamp-2">{achievements.upcomingBadge.description}</p>
+
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-[10px] font-bold">
+                            <span className="text-indigo-600 uppercase">Progress</span>
+                            <span className="text-slate-400">Target: {achievements.upcomingBadge.rule?.threshold}</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full animate-pulse transition-all duration-1000" style={{ width: `${achievements.upcomingBadge.progress || 0}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-5 rounded-2xl bg-slate-50 text-center border border-dashed border-slate-200">
+                      <Trophy className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                      <p className="text-xs text-slate-400 font-medium whitespace-pre-wrap">All known badges unlocked!\nYou're a master.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Question Interaction History */}
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-xl h-full">
             <CardHeader>
-              <CardTitle className="text-blue-700 dark:text-blue-400 flex items-center gap-2 text-sm sm:text-base">
-                <TrendingUp className="h-5 w-5" />
-                Score Progression
+              <CardTitle className="text-slate-800 dark:text-slate-100 font-bold flex items-center gap-2">
+                <BarChart2 className="h-5 w-5 text-blue-500" />
+                Poll Interaction
               </CardTitle>
             </CardHeader>
-            <CardContent className="h-64 sm:h-72 p-0 flex items-center justify-center">
+            <CardContent>
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/40 text-center">
+                    <div className="text-xs font-bold text-emerald-600 uppercase mb-1">Correct</div>
+                    <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400">{pollStats?.correctAnswers || 0}</div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-800/40 text-center">
+                    <div className="text-xs font-bold text-rose-600 uppercase mb-1">Incorrect</div>
+                    <div className="text-2xl font-black text-rose-700 dark:text-rose-400">{pollStats?.incorrectAnswers || 0}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-sm font-medium">
+                    <span className="text-slate-500">Attempt Rate</span>
+                    <span className="text-slate-800 dark:text-slate-100 font-bold">{performanceSummary.participationRate}</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full" style={{ width: performanceSummary.participationRate }} />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center text-orange-600">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Response Speed</span>
+                    </div>
+                    <div className="text-lg font-black text-slate-800 dark:text-slate-100">{pollStats?.avgResponseTime || 0}s</div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">Average time taken to answer each poll across all sessions.</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Room-wise Results (Grid style with Badges) */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 uppercase tracking-wider">
+              <BookOpen className="w-5 h-5 text-indigo-500" /> Session Analytics
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate({ to: '/student/sessions' })}
+              className="text-blue-600 font-semibold hover:bg-blue-50 dark:hover:bg-blue-900/40"
+            >
+              View All History <ArrowRightCircle className="ml-1 w-4 h-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" data-tour="room-scores">
+            {roomWiseScores && roomWiseScores.length > 0 ? (
+              [...roomWiseScores]
+                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                .slice(0, 3)
+                .map((room, idx) => (
+                  <Card key={room.roomCode || idx} className="border-0 shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all group overflow-hidden bg-white dark:bg-slate-800">
+                    <div className={`h-1.5 w-full ${room.status === 'active' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div className="min-w-0">
+                          <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-blue-600 transition-colors">{room.roomName}</CardTitle>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">ID: {room.roomCode}</p>
+                        </div>
+                        {room.status === 'active' && (
+                          <div className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-700 animate-pulse">LIVE</div>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-center">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase">Points</div>
+                          <div className="text-sm font-black text-slate-700 dark:text-slate-200">{room.score}</div>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-center">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase">Badges</div>
+                          <div className="text-sm font-black text-indigo-600 dark:text-indigo-400">{room.badgesCount}</div>
+                        </div>
+                        <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-center">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase">Speed</div>
+                          <div className="text-sm font-black text-slate-700 dark:text-slate-200">{room.avgResponseTime}s</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-bold">
+                            <span className="text-slate-500 uppercase">Accuracy</span>
+                            <span className="text-blue-600">{room.averageScore}</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full" style={{ width: room.averageScore }} />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-bold">
+                            <span className="text-slate-500 uppercase">Participation</span>
+                            <span className="text-emerald-600">{Math.round((room.attendedPolls / room.totalPolls) * 100)}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(room.attendedPolls / room.totalPolls) * 100}%` }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate({ to: `/student/pollroom/${room.roomCode}` })}
+                        className="w-full rounded-xl border-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900 font-bold text-xs"
+                      >
+                        Review Session <ArrowRightCircle className="ml-2 w-4 h-4" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))
+            ) : (
+              <div className="col-span-full py-12 bg-white/50 dark:bg-slate-800/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center">
+                <BookOpen className="w-12 h-12 mx-auto text-slate-300 mb-2" />
+                <p className="text-slate-400 font-medium">No sessions found.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Charts & Lists (Grouped) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-6">
+          {/* Score Progression */}
+          <Card className="shadow-lg border-0 bg-white dark:bg-slate-800 overflow-hidden">
+            <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
+              <CardTitle className="text-slate-800 dark:text-slate-100 flex items-center gap-2 text-sm sm:text-base font-black uppercase tracking-widest">
+                <TrendingUp className="h-5 w-5 text-blue-500" />
+                Score Trend
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="h-72 p-6">
               {scoreProgression && scoreProgression.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={scoreProgression} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <BarChart data={scoreProgression} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                     <XAxis
                       dataKey="poll"
-                      tick={{ fontSize: 10, fill: isDark ? '#9ca3af' : '#6b7280' }}
-                      axisLine={{ stroke: isDark ? '#4b5563' : '#d1d5db' }}
+                      hide
                     />
                     <YAxis
-                      tick={{ fontSize: 10, fill: isDark ? '#9ca3af' : '#6b7280' }}
-                      axisLine={{ stroke: isDark ? '#4b5563' : '#d1d5db' }}
+                      tick={{ fontSize: 10, fill: '#94a3b8' }}
+                      axisLine={false}
+                      tickLine={false}
                     />
                     <Tooltip
+                      cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                       contentStyle={{
-                        backgroundColor: isDark ? '#1f2937' : '#ffffff',
-                        border: isDark ? '1px solid #374151' : '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        color: isDark ? '#f3f4f6' : '#1f2937'
+                        backgroundColor: '#1e293b',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'
                       }}
-                      formatter={(value: any, name: any, props: any) => [
-                        `${value} / ${props.payload?.maxPoints || 20}`,
+                      formatter={(value: any) => [
+                        `${value} pts`,
                         'Score'
                       ]}
                     />
                     <Bar
                       dataKey="score"
-                      fill="#3b82f6"
-                      radius={[4, 4, 0, 0]}
+                      fill="url(#colorScore)"
+                      radius={[6, 6, 0, 0]}
+                      minPointSize={6}
+                      background={{ fill: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)', radius: 6 }}
                     />
+                    <defs>
+                      <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.8} />
+                      </linearGradient>
+                    </defs>
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-center text-gray-500 dark:text-gray-400">
-                  <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No score progression data</p>
+                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                  <TrendingUp className="h-12 w-12 opacity-10 mb-2" />
+                  <p className="text-xs font-bold uppercase tracking-widest">No Trend Data</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Room-wise Results */}
-          <Card className="shadow-md dark:shadow-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" data-tour="room-scores">
-            <CardHeader>
-              <CardTitle className="text-blue-700 dark:text-blue-400 flex items-center gap-2 text-sm sm:text-base">
-                <BookOpen className="h-5 w-5" />
-                Room-wise Results
+          {/* Recent Interaction Log */}
+          <Card className="shadow-lg border-0 bg-white dark:bg-slate-800 overflow-hidden">
+            <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700">
+              <CardTitle className="text-slate-800 dark:text-slate-100 flex items-center gap-2 text-sm sm:text-base font-black uppercase tracking-widest">
+                <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                Recent Poll Activity
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {roomWiseScores && roomWiseScores.length > 0 ? (
-                <div className="grid gap-4">
-                  {roomWiseScores.map((room, idx) => (
-                    <div key={room.roomCode || idx} className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-700 transition-all flex flex-col gap-4">
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+            <CardContent className="p-0 max-h-72 overflow-y-auto">
+              {pollResults && pollResults.length > 0 ? (
+                [...pollResults]
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .slice(0, 10)
+                  .map((item, i) => (
+                    <div key={i} className="flex items-center justify-between p-4 border-b border-slate-50 dark:border-slate-900/50 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-900/20 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${item.isCorrect ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`} />
                         <div>
-                          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base sm:text-lg flex items-center gap-2">
-                            <span className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                              <BookOpen className="w-4 h-4" />
-                            </span>
-                            {room.roomName}
-                          </h3>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-                            <span className="inline-block w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600"></span>
-                            Room Code: <span className="font-medium tracking-wide">{room.roomCode}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <div className="flex items-baseline gap-1 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full border border-green-100 dark:border-green-800">
-                            <Award className="w-4 h-4 text-green-600 dark:text-green-400" />
-                            <span className="text-lg font-bold text-green-700 dark:text-green-400">
-                              {room.score}
-                            </span>
-                            <span className="text-sm font-medium text-green-600/70 dark:text-green-500">
-                              / {room.maxPossiblePoints} pts
-                            </span>
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{item.name}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">
+                            {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {item.isCorrect ? 'Correct' : 'Incorrect'} • {item.timer}s limit
                           </div>
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        {/* Attendance Stats */}
-                        <div className="space-y-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Participation</span>
-                            <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                              {room.totalPolls > 0 ? Math.round(((room.taken || room.attendedPolls || 0) / room.totalPolls) * 100) : 0}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
-                            <div
-                              className="bg-indigo-500 dark:bg-indigo-400 h-1.5 rounded-full transition-all duration-500"
-                              style={{ width: `${room.totalPolls > 0 ? ((room.taken || room.attendedPolls || 0) / room.totalPolls) * 100 : 0}%` }}
-                            />
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 pt-1 text-right">
-                            {room.taken || room.attendedPolls || 0} of {room.totalPolls} polls
-                          </div>
-                        </div>
-
-                        {/* Performance Stats */}
-                        <div className="space-y-1.5 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold flex items-center gap-1"><Target className="w-3 h-3" /> Accuracy</span>
-                            <span className="font-bold text-blue-600 dark:text-blue-400">
-                              {room.averageScore || '0%'}
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
-                            <div
-                              className="bg-blue-500 dark:bg-blue-400 h-1.5 rounded-full transition-all duration-500"
-                              style={{ width: `${parseInt(room.averageScore) || 0}%` }}
-                            />
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 pt-1 text-right">
-                            Avg. score
-                          </div>
-                        </div>
-                      </div>
+                      <div className="text-xs font-black text-slate-600 dark:text-slate-400">+{item.points} pts</div>
                     </div>
-                  ))}
-                </div>
+                  ))
               ) : (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <BookOpen className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No room results available</p>
+                <div className="p-12 text-center text-slate-400">
+                  <Clock className="w-10 h-10 mx-auto opacity-10 mb-2" />
+                  <p className="text-[10px] font-bold uppercase tracking-widest">Activity Log Empty</p>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
-
-        {/* Performance Summary */}
-        <Card className="shadow-md dark:shadow-xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" data-tour="performance-summary">
-          <CardHeader>
-            <CardTitle className="text-blue-800 dark:text-blue-200 font-bold flex items-center gap-2 text-sm sm:text-base">
-              <Trophy className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              Performance Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-              <div className="p-5 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/10 dark:to-emerald-900/10 rounded-xl border-2 border-green-100 dark:border-green-800/30 flex flex-col items-center text-center group hover:border-green-300 dark:hover:border-green-700 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-800/50 flex flex-col items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Target className="w-6 h-6 text-green-600 dark:text-green-400" />
-                </div>
-                <div className="text-sm font-bold text-green-800 dark:text-green-300 uppercase tracking-widest mb-1">Average Score</div>
-                <div className="text-3xl font-black text-green-600 dark:text-green-400 mb-2 drop-shadow-sm">
-                  {performanceSummary?.avgScore || '0%'}
-                </div>
-                <div className="text-xs font-semibold px-3 py-1 bg-green-100 dark:bg-green-800/40 rounded-full text-green-700 dark:text-green-300">
-                  {(() => {
-                    const score = parseInt(performanceSummary?.avgScore || '0');
-                    if (score >= 80) return 'Excellent performance 🚀';
-                    if (score >= 60) return 'Good performance 👍';
-                    return 'Keep improving 💪';
-                  })()}
-                </div>
-              </div>
-              <div className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-xl border-2 border-blue-100 dark:border-blue-800/30 flex flex-col items-center text-center group hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-800/50 flex flex-col items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <CheckCircle className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div className="text-sm font-bold text-blue-800 dark:text-blue-300 uppercase tracking-widest mb-1">Participation Rate</div>
-                <div className="text-3xl font-black text-blue-600 dark:text-blue-400 mb-2 drop-shadow-sm">
-                  {performanceSummary?.participationRate || '0%'}
-                </div>
-                <div className="text-xs font-semibold px-3 py-1 bg-blue-100 dark:bg-blue-800/40 rounded-full text-blue-700 dark:text-blue-300">
-                  Attempted {pollStats?.taken || 0} out of {pollStats?.total || 0} polls
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="mb-6 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-0 shadow-xl shadow-indigo-500/10">
-          <CardHeader>
-            <CardTitle className="text-blue-800 dark:text-blue-200 font-bold flex items-center justify-between gap-2 text-sm sm:text-base">
-              <span className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                Achievements
-              </span>
-              <button
-                type="button"
-                onClick={() => navigate({ to: '/student/badges' })}
-                className="group inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
-                aria-label="Go to badges page"
-                title="Go to badges"
-              >
-                <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 group-hover:max-w-[120px] group-hover:opacity-100 text-xs font-semibold">
-                  Your achievements
-                </span>
-                <ArrowRightCircle className="h-5 w-5" />
-              </button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">
-                {achievementProgress.earned}/{achievementProgress.total}
-              </span>
-            </div>
-            <div className="relative h-3 rounded-full bg-linear-to-r from-slate-200 to-slate-300 dark:from-gray-700 dark:to-gray-600 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-linear-to-r from-indigo-500 via-blue-500 to-emerald-500 transition-all duration-700"
-                style={{ width: `${achievementProgress.percent}%` }}
-              />
-            </div>
-            <div className="mt-2 flex items-center justify-between text-xs">
-              <span className="text-gray-500 dark:text-gray-400">Progress</span>
-              <span className="font-semibold text-emerald-600 dark:text-emerald-300">{achievementProgress.percent}% complete</span>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

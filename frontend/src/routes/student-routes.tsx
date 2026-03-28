@@ -2,9 +2,10 @@ import { RouteObject } from "react-router-dom";
 import StudentLayout from "@/layouts/student-layout";
 import StudentDashboard from "@/pages/student/StudentDashboard";
 // import ParentComponent from "@/ai-components/ParentComponent";
-import JoinPollRoom from "@/pages/student/JoinPollRoom"; 
+import JoinPollRoom from "@/pages/student/JoinPollRoom";
 import StudentPollRoom from "@/pages/student/StudentPollRoom";
 import Badges from "@/pages/student/Badges";
+import StudentSessions from "@/pages/student/StudentSessions";
 
 const studentRoutes: RouteObject = {
   path: "/student",
@@ -27,10 +28,14 @@ const studentRoutes: RouteObject = {
       element: <Badges />,
     },
     {
+      path: "sessions",
+      element: <StudentSessions />,
+    },
+    {
       index: true,
       element: <StudentDashboard />, // Default to Dashboard
     }
   ],
 };
 
-export default {studentRoutes};
+export default { studentRoutes };

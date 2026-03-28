@@ -162,6 +162,13 @@ export class RoomService {
     pollSocket?.emitToRoom(code, 'room-ended', {
       message: 'Room has ended'
     });
+
+    if (updated && updated.joinedStudents) {
+      updated.joinedStudents.forEach((studentId: string) => {
+        pollSocket?.emitToUser(studentId, 'dashboard-update', { type: 'room_ended', roomCode: code });
+      });
+    }
+
     return !!updated;
   }
 
