@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams, useLocation, Link } from 'react-router-dom';
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 import axios from 'axios';
 import { BookOpen, Mic, MicOff, Users, ArrowRight, Save, MessageSquare, Zap } from 'lucide-react';
 
