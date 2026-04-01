@@ -1,73 +1,87 @@
-# React + TypeScript + Vite
+# Spandan – Real-Time Interactive Classroom Platform
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 📌 Overview
 
-Currently, two official plugins are available:
+Spandan is a real-time interactive learning platform that transforms traditional lectures into engaging sessions. It captures teacher speech, converts it into text, and automatically generates questions for students to answer instantly.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 🚀 Key Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+* 🎤 Real-time speech-to-text transcription
+* 🤖 Automatic question generation (Mock DB + NLP)
+* ⚡ Live interaction between teacher and students
+* 📊 Leaderboard and performance tracking
+* 🧠 Time-based scoring system
+* ✍️ Manual question creation by teacher
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🛠️ Tech Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+**Frontend:** React, TypeScript, Vite, Socket.IO-client
+**Backend:** Node.js, Express.js, Socket.IO, MongoDB
+**AI/NLP:** Compromise NLP + Mock Trivia DB
+**Deployment:** Vercel (Frontend), Render/Railway (Backend)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 🌐 Live Demo
+
+👉 Add your deployment link here:
+[Live Project Link](https://spandan-iota.vercel.app/)
+
+---
+
+## ⚙️ How to Run Locally
+
+### 1. Clone Repository
+
+```bash
+git clone <your-repo-link>
+cd spandan
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. Run Backend
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd backend
+npm install
+node index.js
 ```
+
+### 3. Run Frontend
+
+```bash
+cd vite-project
+npm install
+npm run dev
+```
+
+Open: http://localhost:5173
+
+---
+
+## 🎯 How It Works
+
+1. Teacher creates a session
+2. Students join using Session ID
+3. Teacher speaks → transcript generated
+4. Questions auto-generated every 20 seconds
+5. Students answer in real-time
+6. Scores and leaderboard update instantly
+
+---
+
+## 📦 Future Improvements
+
+* Advanced AI-based question generation
+* Better analytics dashboard
+* Multi-session tracking
+* Improved UI/UX
+
+---
+
+## 👩‍💻 Author
+
+Navya Sri Mahadevapatnam
